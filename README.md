@@ -88,8 +88,9 @@ docs/PRD.md
 
 ## Web app
 
-`uv run fall-zero serve`, then open http://localhost:8011. Send a photo or a short video (attach, drop, or
-paste; the empty screen has two sample rooms).
+`uv run fall-zero serve`, then open http://localhost:8011. The empty screen explains the four steps (snap
+the room, find what can tip, simulate it, fix it). Send a photo or a short video (the chat bar's button, drop,
+or paste), or tap one of the four sample rooms above the chat bar.
 
 Any room works: a nursery, a kitchen (a range, a hutch), a living room (a TV on a console, a bookcase, a
 leaning mirror), a garage or an office. Most pieces are boxes with drawers, doors or shelves, which the engine

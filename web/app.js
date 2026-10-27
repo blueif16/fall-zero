@@ -8,7 +8,7 @@
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  empty: $("empty"), messages: $("messages"), thread: $("thread"), composer: $("composer"), text: $("text"),
+  empty: $("empty"), tryone: $("tryone"), messages: $("messages"), thread: $("thread"), composer: $("composer"), text: $("text"),
   file: $("file"), attachment: $("attachment"), send: $("send"), mic: $("mic"), drop: $("drop"), toast: $("toast"),
   status: $("status"), statusLabel: document.querySelector("#status .label"),
   historyBtn: $("history-btn"), history: $("history"), historyList: $("history-list"),
@@ -74,10 +74,11 @@ function summarizeStatus() {
 
 // --- attaching a photo or video ---------------------------------------------------------
 
-function attach(file) {
+function attach(file, sample = null) {
   if (!file) return;
   if (!/^(image|video)\//.test(file.type)) return toast("Send a photo or a video");
   pending = file;
+  markSample(sample);
   const url = URL.createObjectURL(file);
   const isVideo = file.type.startsWith("video/");
   const preview = isVideo ? `<video src="${url}" muted></video>` : `<img src="${url}" alt="">`;
@@ -94,6 +95,7 @@ function attach(file) {
 
 function clearAttachment() {
   pending = null;
+  markSample(null);
   els.attachment.hidden = true;
   els.attachment.innerHTML = "";
   els.composer.classList.remove("has-media");
@@ -101,14 +103,20 @@ function clearAttachment() {
   updateSend();
 }
 
-async function attachSample(src) {
+async function attachSample(button) {
+  const src = button.dataset.src;
   const blob = await (await fetch(src)).blob();
-  attach(new File([blob], src.split("/").pop(), { type: blob.type }));
+  attach(new File([blob], src.split("/").pop(), { type: blob.type }), button);
 }
 
-$("pick").onclick = $("pick-big").onclick = () => els.file.click();
+// the sample room that's attached gets a ring, so it's clear which one goes
+function markSample(button) {
+  document.querySelectorAll(".sample").forEach((b) => b.classList.toggle("on", b === button));
+}
+
+$("pick").onclick = () => els.file.click();
 els.file.onchange = () => { attach(els.file.files[0]); els.file.value = ""; };
-document.querySelectorAll(".sample").forEach((b) => (b.onclick = () => attachSample(b.dataset.src)));
+document.querySelectorAll(".sample").forEach((b) => (b.onclick = () => attachSample(b)));
 
 let dragDepth = 0;
 window.addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; els.drop.hidden = false; });
@@ -150,10 +158,16 @@ function resetChat() {
   els.text.value = "";
 }
 
+// The welcome screen and the sample rooms above the chat bar show together, only while the chat is empty
+function showEmpty(on) {
+  els.empty.hidden = !on;
+  els.tryone.hidden = !on;
+}
+
 function newChat() {
   if (busy) return;
   resetChat();
-  els.empty.hidden = false;
+  showEmpty(true);
   els.empty.style.animation = "none";
   void els.empty.offsetWidth;
   els.empty.style.animation = "";
@@ -206,7 +220,7 @@ async function send() {
   const text = els.text.value.trim();
   if (busy || (!text && !pending)) return;
   busy = true;
-  els.empty.hidden = true;
+  showEmpty(false);
   closeHistory();
   const file = pending;
   const isVideo = !!file && file.type.startsWith("video/");
@@ -713,7 +727,7 @@ async function openThread(id) {
   resetChat();
   thread = saved;
   previousId = saved.previous_response_id || null;
-  els.empty.hidden = true;
+  showEmpty(false);
   for (const m of saved.messages) {
     if (m.role === "user") addUserMessage(m.text, m.media);
     else new BotMessage(null, m, true).restore();

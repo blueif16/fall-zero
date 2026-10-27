@@ -40,27 +40,43 @@
   <main id="thread">
     <section id="empty" class="empty">
       <h1 class="logo hero-logo">Fall<span class="zero">0</span></h1>
-      <p><b>Will it tip over?</b> Show me a room. I'll check every dresser and chest for kids, older adults and
-        earthquakes.</p>
-      <button id="pick-big" class="pick-big" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-        <span>Choose a photo or video</span>
-        <small>or drop it anywhere</small>
-      </button>
-      <div class="samples">
-        <span>Try one</span>
-        <button class="sample" type="button" data-src="/samples/nursery_tall_dresser.png" title="Nursery: tall chest, TV on top">
-          <img src="/samples/nursery_tall_dresser.png" alt="Nursery with a tall chest of drawers">
-        </button>
-        <button class="sample" type="button" data-src="/samples/toddler_room_dresser.png" title="Toddler room: 3-drawer dresser">
-          <img src="/samples/toddler_room_dresser.png" alt="Toddler room with a three-drawer dresser">
-        </button>
-      </div>
+      <p class="lede"><b>Will anything here tip over?</b> Show me any room. I find what could fall on a child, an
+        older adult, or in an earthquake, simulate it, and show you the fix.</p>
+      <ol class="flow" aria-label="How it works">
+        <li style="--i:0">
+          <span class="fi"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+          <b>Snap the room</b><small>A photo or a short video</small>
+        </li>
+        <li style="--i:1">
+          <span class="fi"><svg viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></span>
+          <b>Find what can tip</b><small>Muse Spark · SAM 3.1</small>
+        </li>
+        <li class="sim" style="--i:2">
+          <span class="fi"><svg class="rock" viewBox="0 0 24 24"><rect x="7" y="4" width="10" height="16" rx="1"/><path d="M7 9.5h10M7 14.5h10M11 7h2M11 12h2M11 17h2"/></svg></span>
+          <b>Simulate it</b><small>Child climbs · adult leans · earthquake</small>
+        </li>
+        <li style="--i:3">
+          <span class="fi"><svg viewBox="0 0 24 24"><path d="M4 4v16"/><rect x="9" y="7" width="11" height="13" rx="1"/><path d="M4 10h5"/><path d="M12 13.5l2 2 3.5-4"/></svg></span>
+          <b>Fix it</b><small>Strap, lock or move, checked again</small>
+        </li>
+      </ol>
+      <p class="why">Tip-overs send about 18,000 people in the US to the ER every year. Four in five of those killed are children.</p>
     </section>
     <div id="messages"></div>
   </main>
 
   <footer class="dock">
+    <div id="tryone" class="tryone">
+      <span>Try one</span>
+      <button class="sample" type="button" data-src="/samples/nursery_tall_dresser.png" title="Nursery: tall chest, TV on top">
+        <img src="/samples/thumbs/nursery_tall_dresser.jpg" alt=""><i>Nursery</i></button>
+      <button class="sample" type="button" data-src="/samples/toddler_room_dresser.png" title="Toddler room: 3-drawer dresser">
+        <img src="/samples/thumbs/toddler_room_dresser.jpg" alt=""><i>Toddler room</i></button>
+      <button class="sample" type="button" data-src="/samples/kitchen_range_hutch.png" title="Kitchen: range, hutch, high chair">
+        <img src="/samples/thumbs/kitchen_range_hutch.jpg" alt=""><i>Kitchen</i></button>
+      <button class="sample" type="button" data-src="/samples/living_room_mirror_bookcase.png" title="Living room: bookcase, TV, leaning mirror">
+        <img src="/samples/thumbs/living_room_mirror_bookcase.jpg" alt=""><i>Living room</i></button>
+    </div>
     <form id="composer" class="composer">
       <div id="attachment" class="attachment" hidden></div>
       <div class="row">
