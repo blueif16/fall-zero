@@ -402,3 +402,27 @@ textarea:placeholder-shown { white-space: nowrap; overflow: hidden; text-overflo
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   .still rect { stroke-dashoffset: 0; }
 }
+
+/* --- the room card and the piece cards it opens --- */
+.card.room .room-icon { display: grid; place-items: center; background: var(--soft); color: var(--fg); }
+.card.room .room-icon svg { width: 26px; height: 26px; }
+.pn {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin-right: 4px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 700; color: #fff; background: var(--muted); font-style: normal;
+}
+.pn.tips { background: var(--tips); } .pn.maybe { background: var(--maybe); } .pn.holds { background: var(--holds); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; border: 1px solid var(--line); border-radius: 999px;
+  background: #fff; font-size: 13.5px; font-weight: 600; transition: transform .15s var(--ease), box-shadow .15s;
+}
+.chip i { width: 30px; height: 30px; border-radius: 50%; background-color: var(--soft-2); background-repeat: no-repeat; flex: none; }
+.chip:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+.card[hidden] { display: none; }
+.card-head { position: relative; }
+.hide-piece { position: absolute; right: 0; top: 0; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+.hide-piece:hover { background: var(--soft); }
+.hide-piece svg { width: 16px; height: 16px; }
+.still svg g[data-piece] { cursor: pointer; }
+.still svg g[data-piece] rect { pointer-events: all; }
+

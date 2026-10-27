@@ -31,6 +31,7 @@ const ICON = {
   wrench: svg('<path d="M14.5 6.5a4 4 0 0 0 5 5l-8 8a2.1 2.1 0 0 1-3-3l8-8a4 4 0 0 0-2-2z"/>'),
   play: svg('<path d="M7 4.5v15l12-7.5z"/>'),
   replay: svg('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/>'),
+  room: svg('<path d="M3 11l9-7 9 7"/><path d="M5 9.5V20h14V9.5"/><path d="M10 20v-6h4v6"/>'),
 };
 const RISKS = [["child", "Child climbs"], ["adult", "Adult leans"], ["quake", "Earthquake"]];
 const ITEM_WORD = { tv: "TV", screen: "TV" }; // only when the model gave no short name
@@ -356,17 +357,24 @@ class BotMessage {
       top.innerHTML = stillFigure(ev);
     }
     const cards = this.el.querySelector(".cards");
+    // Two or more pieces: one card for the whole room; each piece's card opens from its marker or chip
+    const room = ev.cards.length > 1 ? { ev, pieces: [], el: document.createElement("article") } : null;
+    if (room) cards.append(room.el);
     ev.cards.forEach((card, index) => {
-      const p = { run: ev.run, index, n: pieces.length + 1, card, still: ev.still, size: ev.size, record: ev };
+      const p = { run: ev.run, index, n: pieces.length + 1, card, still: ev.still, size: ev.size, record: ev, room };
       p.el = document.createElement("article");
       p.el.style.setProperty("--i", index);
+      p.el.hidden = !!room;
       p.marker = top.querySelector(`[data-piece="${index}"]`);
       p.marker?.setAttribute("data-n", p.n);
       top.querySelectorAll(`[data-piece="${index}"] text`).forEach((t) => (t.textContent = p.n));
+      if (p.marker) p.marker.onclick = () => openPiece(p);
       pieces.push(p);
+      room?.pieces.push(p);
       render(p);
       cards.append(p.el);
     });
+    if (room) renderRoom(room);
     let tail = "";
     if (ev.others.length) {
       tail += `<p class="also">Also saw ${ev.others.map(esc).join(", ")}. I can't check ${ev.others.length > 1 ? "those" : "that"} yet.</p>`;
@@ -481,6 +489,7 @@ function render(p, prev = null) {
       <div class="thumb" style="${thumbStyle(p)}"><span class="num">${p.n}</span></div>
       <div><div class="name">${esc(c.name)}</div>
         <div class="verdict${verdictChanged ? " pop" : ""}">${ICON[c.status]}<span>${esc(c.headline)}</span></div></div>
+      ${p.room ? `<button class="hide-piece" type="button" title="Back to the room">${ICON.close}</button>` : ""}
     </header>
     ${c.items.length ? `<div class="ontop"><span>On top</span>${[...c.items].sort(byHazard).map((it) =>
       `<span class="item ${it.level}${it.moved ? " moved" : ""}" title="${esc(it.why)}"><i style="${thumbStyle(p, it.box, 28)}"></i>${esc(it.short)}${
@@ -492,7 +501,11 @@ function render(p, prev = null) {
     ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}`;
 
   if (p.marker) p.marker.style.color = `var(--${c.status})`;
-  if (!c.judged) mountSim(p); // a judged piece has no model to play
+  if (!c.judged && !p.el.hidden) mountSim(p); // a judged piece has no model to play; a hidden one waits
+  p.el.querySelector(".hide-piece")?.addEventListener("click", () => {
+    p.el.hidden = true;
+    p.room.el.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 
   p.el.querySelectorAll("[data-q]").forEach((qEl) => {
     const key = qEl.dataset.q;
@@ -515,6 +528,101 @@ function render(p, prev = null) {
       recheck(p, next);
     };
   });
+}
+
+// --- the room card: the whole setup at a glance ------------------------------------------------
+
+const RANK = { holds: 0, maybe: 1, tips: 2 };
+const worstOf = (statuses) => ["tips", "maybe", "holds"].find((s) => statuses.includes(s)) || "holds";
+const badges = (ps) => ps.map((p) => `<span class="pn ${p.card.status}">${p.n}</span>`).join("");
+
+function openPiece(p) {
+  if (p.el.hidden) {
+    p.el.hidden = false;
+    if (!p.card.judged) mountSim(p);
+  }
+  p.el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// Fixes from every piece, merged when they're the same fix ("Strap it to the wall" on three pieces), each
+// with what the whole room becomes once it's done, most helpful first
+function roomFixes(room, now) {
+  const groups = new Map();
+  for (const p of room.pieces) {
+    for (const f of p.card.fixes) {
+      if (!f.answer) continue;
+      const key = f.key.startsWith("fix_") ? f.title : `${f.key}|${f.title}`;
+      if (!groups.has(key)) groups.set(key, { key, f, members: [] });
+      groups.get(key).members.push({ p, f });
+    }
+  }
+  return [...groups.values()].map((g) => {
+    const after = Object.fromEntries(RISKS.map(([k]) => [k, worstOf(room.pieces.map((p) => {
+      const m = g.members.find((x) => x.p === p);
+      return m && m.f.after ? m.f.after[k] : p.card.risks[k].status;
+    }))]));
+    const gain = RISKS.reduce((n, [k]) => n + (RANK[after[k]] < RANK[now[k]]), 0);
+    return { ...g, after, gain, done: g.members.every((m) => m.f.done) };
+  }).sort((a, b) => a.done - b.done || b.gain - a.gain || b.members.length - a.members.length).slice(0, 4);
+}
+
+function renderRoom(room) {
+  const ps = room.pieces;
+  const now = Object.fromEntries(RISKS.map(([k]) => [k, worstOf(ps.map((p) => p.card.risks[k].status))]));
+  const status = worstOf(Object.values(now));
+  const count = (s) => ps.filter((p) => p.card.status === s).length;
+  const headline = status === "holds" ? "Everything here is stable"
+    : [[count("tips"), "can tip"], [count("maybe"), "might tip"]].filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(", ");
+  const where = room.ev.report.room ? `This ${esc(room.ev.report.room)}` : "This room";
+
+  const risks = RISKS.map(([k, label]) => {
+    const worst = ps.filter((p) => p.card.risks[k].status === now[k] && now[k] !== "holds");
+    return `<div class="risk ${now[k]}"><div class="rtop"><span class="ricon">${ICON[k]}</span>
+      <span class="rstate">${ICON[now[k]]}${WORD[now[k]]}</span></div><div class="rlabel">${label}</div>
+      <div class="rsays">${worst.length ? badges(worst) : "Nothing tips"}</div></div>`;
+  }).join("");
+
+  const fixes = roomFixes(room, now);
+  const fixHTML = fixes.map((g, i) => `<div class="fix${g.done ? " done" : ""}" data-g="${i}">
+      <div class="ficon">${ICON[g.f.icon] || ICON.strap}</div><div class="ft">${esc(g.f.title)}</div>
+      <div class="fw">${badges(g.members.map((m) => m.p))}</div>
+      <div class="after">Room after${RISKS.map(([k, label]) => `<i class="${g.after[k]}" title="${label}: ${WORD[g.after[k]]}">${ICON[k]}</i>`).join("")}</div>
+      <button class="done-btn" type="button">${g.done ? `${ICON.holds}Done` : "I did this"}</button></div>`).join("");
+
+  // a question every piece shares (which floor?) is asked once, for the room
+  const floor = ps.map((p) => p.card.questions.find((q) => q.key === "floor")).find(Boolean);
+  const asked = floor ? `<div class="q" data-floor><div class="qt">${esc(floor.title)}</div><div class="qh">${esc(floor.hint || "")}</div>
+      <div class="opts">${floor.options.map((o) => `<button type="button" data-v="${esc(o.value)}">${esc(o.label)}</button>`).join("")}</div></div>` : "";
+
+  const chips = ps.map((p) => `<button class="chip ${p.card.status}" type="button" data-n="${p.n}">
+      <i style="${thumbStyle(p, p.card.box, 30)}"></i><span class="pn ${p.card.status}">${p.n}</span>${esc(p.card.name)}</button>`).join("");
+
+  room.el.className = `card room ${status}`;
+  room.el.innerHTML = `
+    <header class="card-head">
+      <div class="thumb room-icon">${ICON.room}</div>
+      <div><div class="name">${where} · ${ps.length} pieces</div>
+        <div class="verdict">${ICON[status]}<span>${esc(headline)}</span></div></div>
+    </header>
+    <div class="risks">${risks}</div>
+    ${fixHTML ? `<section class="block"><h4>${ICON.wrench}Do these first</h4><div class="cards-row">${fixHTML}</div></section>` : ""}
+    ${asked ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="cards-row">${asked}</div></section>` : ""}
+    <section class="block"><h4>${ICON.play}Each piece</h4><div class="chips">${chips}</div></section>`;
+
+  room.el.querySelectorAll("[data-g]").forEach((el) => {
+    const g = fixes[+el.dataset.g];
+    el.querySelector(".done-btn").onclick = () => g.members.forEach(({ p, f }) => {
+      if (!g.done) return f.done || answer(p, f.answer);
+      const next = { ...p.card.answers };
+      Object.keys(f.answer).forEach((k) => delete next[k]);
+      recheck(p, next);
+    });
+  });
+  room.el.querySelectorAll("[data-floor] .opts button").forEach((b) => (b.onclick = () => {
+    b.classList.add("picked");
+    ps.filter((p) => p.card.questions.some((q) => q.key === "floor")).forEach((p) => answer(p, { floor: b.dataset.v }));
+  }));
+  room.el.querySelectorAll(".chip").forEach((b) => (b.onclick = () => openPiece(ps.find((p) => p.n === +b.dataset.n))));
 }
 
 const HAZARD_ORDER = { danger: 0, caution: 1, fine: 2 };
@@ -620,6 +728,7 @@ async function recheck(p, answers) {
     p.card = await res.json();
     p.record.cards[p.index] = p.card;
     render(p, prev);
+    if (p.room) renderRoom(p.room);
     saveThread();
   } catch (err) {
     toast(`Couldn't re-check: ${err.message.slice(0, 100)}`);

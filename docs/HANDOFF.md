@@ -27,10 +27,23 @@ Cards arrive in about 14–17 s for a one-piece room, and about 30 s for a kitch
 - **Covered so far:** dressers, chests, wardrobes, bookcases, cube shelves, TV and media units,
   hutches, display cabinets, filing cabinets, tool chests, steel shelving and ranges, as 20 worked
   examples. Mirrors, lamps, safes, coat racks and stacked washers are judged.
-- **Cards:** same as before (verdict, three risk tiles, items on top, questions, fixes with
+- **Room first (the user's rule, end of session 2):** people judge the setup as a whole, not object by
+  object. A photo with two or more pieces gets one room card:
+  - the worst status for each risk across the pieces, with the numbers of the pieces behind it;
+  - "Do these first": fixes merged across pieces, each with the whole room's state afterwards, and
+    "I did this" applies it to every piece it covers;
+  - the floor question, asked once;
+  - piece chips.
+
+  Piece cards are hidden. Tapping a numbered outline on the photo, or a chip, opens one; the close
+  button hides it again. Its 3D viewer only loads when opened. A one-piece photo shows its piece card
+  as before. All of this is computed in the page (`renderRoom`, `roomFixes` in `web/app.js`).
+- **Outlines:** two pieces never share one (`analyze.assign_boxes`). A phrase like "small wooden
+  cabinet" also matched the hutch beside it, which hid marker 2 under marker 3.
+- **Piece cards:** same as before (verdict, three risk tiles, items on top, questions, fixes with
   after-states, the 3D viewer). Judged pieces have "judged" tags and no viewer, and their fixes and
   answers still update the verdict. The viewer has a "Drawer locks" variant.
-- **Tests:** `uv run pytest` runs 37 tests in about 35 s: physics vs MuJoCo (now including a bookcase, a
+- **Tests:** `uv run pytest` runs 39 tests in about 35 s: physics vs MuJoCo (now including a bookcase, a
   wardrobe and a range), cards, judged cards, every example, legacy reports, the skill loader, and the
   earthquake with sliding drawers.
 
@@ -38,7 +51,7 @@ The user's UX rule still holds: **nobody reads text.** The user's architecture r
 **no hard-coded objects or prompts.** Furniture knowledge lives in `src/fall_zero/skill/`, and the code is
 generic.
 
-## This session's changes (uncommitted on master until the user asks)
+## Session 2's changes (on branch `skill-and-zones`)
 
 1. Speed: sizing at low effort, run in parallel with SAM; earthquake workers start with the server.
    Cards went from 31.7 s to about 14–17 s.
@@ -100,7 +113,16 @@ paragraph if it needs knowledge. To add a material or contents, edit the catalog
 
 ## Next steps, in the order I'd take them
 
-1. **Commit** this session's work once the user okays it.
+0. **The user has more flow improvements for the next session**; ask for their list first. Already
+   known:
+   - **One simulation of the whole room:** the user said "the simulation is done as a whole". Today
+     each piece is simulated on its own, and the room card only combines their verdicts. The next step
+     is one MuJoCo scene with every piece placed from the photo (left to right from the outlines,
+     against the back wall), shaken together and shown in one viewer in the room card. That also
+     catches a piece falling into another.
+   - The room card's text and fixes come from the page's own merge of the piece cards. The agent's
+     one-line reply should talk about the room, not the worst piece.
+1. **Merge** branch `skill-and-zones` into master when the user okays it.
 2. **Real product data:** done for a first pass. `catalog/examples.toml` has 44 sourced products
    (IKEA MALM, HEMNES, BRIMNES, NORDLI, PAX, BILLY, KALLAX, BESTÅ, LACK, DETOLF; Sauder, South
    Shore, Delta Children, HON, Husky, Edsal; GE, Whirlpool, Frigidaire and Summit ranges...) on top of

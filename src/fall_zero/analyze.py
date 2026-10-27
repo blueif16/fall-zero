@@ -103,6 +103,31 @@ async def segment_all(image: Path, concepts: list[str]) -> list[list[meta.Segmen
     return await asyncio.gather(*(meta.segment_image(image, c, include_confidence=True) for c in concepts))
 
 
+def _iou(a, b) -> float:
+    w = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    h = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - w * h
+    return w * h / union if union else 0.0
+
+
+def assign_boxes(per_piece: list[list[meta.Segment]]) -> list[tuple | None]:
+    """One outline per piece. Each takes its largest match, but two pieces can't share one: a phrase
+    like "small wooden cabinet" also matches the big hutch beside it, so the piece with fewer matches
+    (then the surer one) chooses first and the other takes its next match. A piece left with only taken
+    matches gets none."""
+    chosen: dict[int, tuple] = {}
+
+    def surest(i: int) -> float:
+        return max((s.confidence or 0.0 for s in per_piece[i]), default=0.0)
+
+    for i in sorted(range(len(per_piece)), key=lambda i: (len(per_piece[i]), -surest(i))):
+        by_size = sorted((s.box for s in per_piece[i]), key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))
+        free = [b for b in by_size if all(_iou(b, c) < 0.6 for c in chosen.values())]
+        if free:
+            chosen[i] = free[0]
+    return [chosen.get(i) for i in range(len(per_piece))]
+
+
 def read_piece(image: Path, piece: Spotted, room: str, people: str) -> CaseSpec | Judgment:
     """What the engine builds, or a verdict from the references. A piece the survey thought
     buildable but whose description doesn't hold together is judged instead."""
@@ -338,11 +363,11 @@ def analyze(
     lap("describe", t0)  # overlaps "segment"
 
     jobs, thing_segments = [], iter(outlines[len(pieces) :])
-    for piece, segments, spec in zip(pieces, outlines, read, strict=False):
+    boxes = assign_boxes(outlines[: len(pieces)])
+    for piece, box, spec in zip(pieces, boxes, read, strict=False):
         entry: dict = {"piece": piece.model_dump()}
         report["pieces"].append(entry)
         own = [next(thing_segments) for _ in piece.on_top]
-        box = max(segments, key=lambda s: (s.box[2] - s.box[0]) * (s.box[3] - s.box[1])).box if segments else None
         entry["box"] = box
         if isinstance(spec, Judgment):
             entry |= {"status": "judged", "judgment": spec.model_dump()}
