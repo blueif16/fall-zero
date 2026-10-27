@@ -1,0 +1,49 @@
+[project]
+name = "fall-zero"
+version = "0.1.0"
+description = "Fall-Zero: furniture tip-over screening from a phone video (Meta Global AI Developer Hackathon)"
+readme = "README.md"
+authors = [
+    { name = "blueif16", email = "wang.shira@northeastern.edu" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "meta-sam-parser>=0.1.0",
+    "modal>=1.6.2",
+    "mujoco>=3.17.0",
+    "numpy>=2.5.4",
+    "openai>=3.39.0",
+    "pillow>=13.0.0",
+    "pydantic-settings>=2.16.1",
+    "python-multipart>=0.0.32",
+    "rich>=15.0.0",
+    "uvicorn[standard]>=0.54.0",
+    "websockets>=17.3",
+]
+
+[project.scripts]
+fall-zero = "fall_zero:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.14",
+]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["modal_apps/sam3d.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.12"
