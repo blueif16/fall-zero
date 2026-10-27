@@ -196,7 +196,8 @@ def separate(d: Case, items: list[TopItem]) -> list[TopItem]:
 
 def to_template(e: CaseSpec) -> Case:
     """The closest worked example, changed to what the photo shows. A guessed depth keeps the
-    example's; a known weight scales the panels to match it."""
+    example's; a known weight scales the panels to match it, and otherwise the example's own
+    calibration to its real weight stays."""
     library = examples()
     if e.example not in library:  # none fits: start from the example nearest in size
         e.example = min(library, key=lambda k: abs(library[k][1].height * 100 - e.height_cm)
@@ -214,8 +215,7 @@ def to_template(e: CaseSpec) -> Case:
         base_height=e.base_height_cm / 100 if e.base_height_cm > 0 else base.base_height,
         material=e.material,
         runner_friction=RUNNER_FRICTION.get(e.drawer_runners, base.runner_friction),
-        density_scale=1.0,
-    )
+    )  # the example's panel calibration (honeycomb board, a known weight) carries over
     return with_mass(d, e.known_mass_kg)
 
 

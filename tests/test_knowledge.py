@@ -35,3 +35,16 @@ def test_answers_are_limited_to_the_catalogs():
     knowledge.ZoneSpec(**zone, contents="clothes")
     with pytest.raises(ValidationError):
         knowledge.ZoneSpec(**zone, contents="gold bars")
+
+
+def test_each_piece_reads_only_the_examples_like_it():
+    assert {"ikea_billy_80", "bookcase_tall"} <= set(knowledge.shortlist("tall white bookcase by the TV bookcase"))
+    ranges = knowledge.shortlist("white freestanding range kitchen range")
+    assert sum(k.endswith("range") or k == "range_30in" for k in ranges) >= 4
+    assert len(knowledge.shortlist("anything at all")) == knowledge.SHORTLIST
+
+
+def test_real_products_carry_their_weight():
+    """Products in the catalog are calibrated to their published weight (KALLAX is honeycomb board)."""
+    _, kallax = examples()["ikea_kallax_2x4"]
+    assert abs(kallax.mass() - 19.31) < 0.1 and kallax.density_scale < 0.7

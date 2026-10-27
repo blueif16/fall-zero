@@ -24,8 +24,9 @@ earthquakes. Where a piece falls outside a standard's scope, the test is borrowe
   extended and loaded, a vertical force on an extended drawer or open door, and a horizontal force.
 
 ## Ranges: UL 858 (electric) and ANSI Z21.1 (gas)
-- Since 1991: a range must stay up with 250 lb on its open oven door, which in practice means the
-  anti-tip bracket is installed.
+- Unsecured: a load on the open oven door for 5 minutes, along the door's centre line, must not tip it:
+  75 lb for a door 36 in or lower (50 lb above 36 in), raised to 100 lb in UL 858 from June 2017.
+- Secured: 250 lb on the open door for 5 minutes, met with the anti-tip bracket (required since 1991).
 
 ## Tip restraints (wall straps): ASTM F3096
 - A tip restraint must hold a 50 lbf static load. The engine checks that a strap is never asked for

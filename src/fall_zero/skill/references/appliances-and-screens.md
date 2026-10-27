@@ -11,16 +11,24 @@
 - Fixes: a TV strap to the wall or furniture, a wall mount, or moving it to a low, wide, anchored stand.
 
 ## Freestanding ranges and ovens
-- 30 in (76 cm) wide, 63-71 cm deep, 91-94 cm to the cooktop, 55-90 kg, steel. The oven door hinges
-  at the bottom and opens about 50 cm in front.
-- A child standing on the open oven door can tip the range forward, often with hot pots on the
-  cooktop. Since 1991 the voluntary standards (UL 858 electric, ANSI Z21.1 gas) require a range to
-  stay up with 250 lb on the open door. Ranges meet this with an anti-tip bracket fixed to the floor
-  or wall behind a rear foot. Many are installed without it, or the bracket is left off after cleaning.
-- Describe it as a case (example `range_30in`): a storage or warming drawer, a bottom-hinged door,
-  and a short open band for the cooktop. Material `steel`, `known_mass_kg` from the size.
-- Fix: check and install the anti-tip bracket (the strap fix, here a bracket). Ask whether it is
-  installed when you can't tell.
+- 24-30 in (60-76 cm) wide, 62-66 cm deep without the handle, 91-94 cm to the cooktop, 60-75 kg, steel
+  (GE JB645 72 kg, Whirlpool WFE505W0JS 69 kg, Frigidaire FCRG3052BS 73 kg, Summit 24 in 64 kg). The
+  oven door hinges at the bottom and folds down about 50 cm in front.
+- A child standing on the open oven door can tip the range forward, often with hot pots on the cooktop.
+  CPSC counted 13 deaths (2000-2008) and about 1,700 emergency-room injuries a year from appliance
+  instability, and estimated that with only the unsecured-range test load (75 lb), about a quarter of
+  incidents with up to two children on the door would tip the range.
+- Two tests (UL 858 electric, ANSI Z21.1 gas, same requirements): unsecured, the range must stay up
+  with a load on the open door (75 lb for a door 36 in or lower; 100 lb since June 2017); secured,
+  with 250 lb on the open door for 5 minutes, which ranges built since 1991 meet with the anti-tip
+  bracket. Many are installed without it, or it's left off after the range is pulled out to clean.
+- The bracket sits behind a rear foot, at the left or right, screwed to the floor or the wall; the rear
+  leveling leg slides into it. Check: tilt the range forward gently; the bracket should stop it within
+  a few centimetres.
+- Describe it as a case (examples `range_30in` and the GE, Whirlpool, Frigidaire and Summit ones): a
+  storage drawer, a bottom-hinged door, and a short open band for the cooktop. Material `steel`,
+  `known_mass_kg` from the example. `anchor_fix`: "Fit the anti-tip bracket".
+- Ask whether the bracket is installed when you can't tell.
 
 ## Stacked washer and dryer
 - A dryer stacked on a front-load washer without the maker's stacking kit can slide off or tip when

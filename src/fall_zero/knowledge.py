@@ -137,23 +137,54 @@ class CaseSpec(BaseModel):
 
 
 def zones_text(zones) -> str:
+    """Zones from the floor up in a few words each: "drawers 3x2 clothes; doors 2 side, 1 shelf, books 0.5"."""
     parts = []
     for z in zones:
-        what = {"drawers": f"{z.rows}x{z.cols} drawers", "doors": f"{z.cols} {z.hinge}-hinged door(s)",
-                "open": f"open, {z.cols} across"}[z.kind]  # fmt: skip
-        shelves = f", {z.shelves} shelves" if z.kind != "drawers" and z.shelves else ""
-        kept = f", {z.contents or 'clothes'} {z.fill:g}" if z.contents or z.kind == "drawers" else ""
-        parts.append(f"{what}{shelves}{kept} (share {z.share:g})")
+        what = {"drawers": f"drawers {z.rows}x{z.cols}", "doors": f"doors {z.cols} {z.hinge}",
+                "open": f"open {z.cols}"}[z.kind]  # fmt: skip
+        if z.kind != "drawers" and z.shelves:
+            what += f", {z.shelves} {'shelf' if z.shelves == 1 else 'shelves'}"
+        kept = z.contents or ("clothes" if z.kind == "drawers" else "")
+        if kept and kept != "none":
+            what += f", {kept}" + (f" {z.fill:g}" if z.fill < 1 else "")
+        parts.append(what + (f" ({z.share:g})" if len(zones) > 1 else ""))
     return "; ".join(parts)
 
 
-def catalogs_text() -> str:
-    ex = "\n".join(f"- {k}: {label}. {d.width * 100:.0f} x {d.depth * 100:.0f} x {d.height * 100:.0f} cm, "
-                   f"{d.material}, {d.base}, {d.mass():.0f} kg empty. Zones from the floor up: {zones_text(d.zones)}"
-                   for k, (label, d) in examples().items())  # fmt: skip
+SHORTLIST = 16  # worked examples per describe prompt: the whole catalog slows the call by ~5 s
+STOPWORDS = {"a", "an", "and", "by", "cm", "for", "in", "of", "on", "or", "the", "to", "with", "size", "white"}
+
+
+def _words(text: str) -> set[str]:
+    words = {w.rstrip("s") for w in re.findall(r"[a-z]+", text.lower().replace("_", " "))}
+    return {w for w in words if len(w) > 2 and w not in STOPWORDS}
+
+
+def shortlist(about: str = "", n: int = SHORTLIST) -> list[str]:
+    """The worked examples whose names share the most words with the piece ("white tall bookcase by TV",
+    "bookcase"), catalog order breaking ties; with nothing in common, the first ones."""
+    want = _words(about)
+    keys = list(examples())
+    score = {k: len(want & _words(f"{k} {examples()[k][0]}")) for k in keys}
+    return sorted(keys, key=lambda k: (-score[k], keys.index(k)))[:n]
+
+
+def catalogs_text(keys: list[str] | None = None) -> str:
+    """The catalogs in one line per entry, for the describe step: the worked examples in `keys` (all of
+    them by default), the materials and the contents."""
+    library = examples()
+    ex = "\n".join(
+        f"- {k}: {label} | {d.width * 100:.0f}x{d.depth * 100:.0f}x{d.height * 100:.0f} cm | {d.material}, {d.base} | "
+        f"{d.mass():.0f} kg | {zones_text(d.zones)}"
+        for k in keys or library
+        for label, d in [library[k]]
+    )
     mats = "\n".join(f"- {k}: {m.label}" for k, m in materials().items())
     kept = "\n".join(f"- {k}: {c.label}" for k, c in contents().items())
-    return f"## Worked examples\n{ex}\n\n## Materials\n{mats}\n\n## Contents\n{kept}"
+    return (
+        f"## Worked examples (key: name | W x D x H | material, base | empty weight | zones from the floor up, "
+        f"with each zone's share of the height)\n{ex}\n\n## Materials\n{mats}\n\n## Contents\n{kept}"
+    )
 
 
 def describe(image: Path, piece: Spotted, room: str = "") -> CaseSpec:
@@ -163,8 +194,9 @@ def describe(image: Path, piece: Spotted, room: str = "") -> CaseSpec:
         f"Items on top, in this order: {on_top}." if on_top else "Nothing stands on top: items_on_top is empty."
     )
     refs = [*piece.references, *(["weights"] if piece.on_top else [])]
+    examples_for = catalogs_text(shortlist(f"{piece.name} {piece.family}"))
     return meta.respond_json(task, CaseSpec, images=[image], effort=EFFORT,
-                             instructions=instructions("Describe", refs) + "\n\n" + catalogs_text())  # fmt: skip
+                             instructions=instructions("Describe", refs) + "\n\n" + examples_for)  # fmt: skip
 
 
 # --- judge -----------------------------------------------------------------------------------------

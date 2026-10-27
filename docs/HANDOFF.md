@@ -30,7 +30,7 @@ Cards arrive in about 14–17 s for a one-piece room, and about 30 s for a kitch
 - **Cards:** same as before (verdict, three risk tiles, items on top, questions, fixes with
   after-states, the 3D viewer). Judged pieces have "judged" tags and no viewer, and their fixes and
   answers still update the verdict. The viewer has a "Drawer locks" variant.
-- **Tests:** `uv run pytest` runs 35 tests in about 35 s: physics vs MuJoCo (now including a bookcase, a
+- **Tests:** `uv run pytest` runs 37 tests in about 35 s: physics vs MuJoCo (now including a bookcase, a
   wardrobe and a range), cards, judged cards, every example, legacy reports, the skill loader, and the
   earthquake with sliding drawers.
 
@@ -101,10 +101,15 @@ paragraph if it needs knowledge. To add a material or contents, edit the catalog
 ## Next steps, in the order I'd take them
 
 1. **Commit** this session's work once the user okays it.
-2. **Real product data** (the user's idea, scoped down): grow `catalog/examples.toml` from public
-   spec sheets with real dimensions and weights (IKEA, Wayfair, office and garage brands, ranges), with
-   sources. Recommended over importing 3D model files for the physics; the user hadn't decided at the end
-   of the session.
+2. **Real product data:** done for a first pass. `catalog/examples.toml` has 44 sourced products
+   (IKEA MALM, HEMNES, BRIMNES, NORDLI, PAX, BILLY, KALLAX, BESTÅ, LACK, DETOLF; Sauder, South
+   Shore, Delta Children, HON, Husky, Edsal; GE, Whirlpool, Frigidaire and Summit ranges...) on top of
+   the 20 generic examples, each with a `# source:` line saying net, package or shipping weight. Each
+   describe call reads only the 16 examples whose names share words with the piece
+   (`knowledge.shortlist`); the full list costs about 2 s more per call. A picked product keeps its
+   calibration to its real weight. Still to do: front-legs-only pieces (HEMNES shoe and mirror
+   cabinets) are modeled on four legs, and side-by-side fronts (a drawer stack between door bays)
+   are shown as doors.
 3. **Demo video (3 min):** kitchen, living room and nursery; the earthquake tab with drawers sliding
    out; the drawer-lock and strap variants; one judged mirror.
 4. **Survey speed:** 8–11 s on busy rooms. Trim `rooms.md`, or let the survey stream pieces.
