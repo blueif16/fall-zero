@@ -25,8 +25,8 @@ import mujoco  # noqa: E402
 import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-from fall_zero.furniture import Dresser  # noqa: E402
-from fall_zero.physics import Scenario, tilt_angle  # noqa: E402
+from fall_zero.furniture import DOOR_OPEN_RAD, Dresser  # noqa: E402
+from fall_zero.physics import Scenario, load_point, tilt_angle  # noqa: E402
 
 SETTLE, RAMP, HOLD = 1.0, 2.0, 4.0
 TIP_DEG = 5.0
@@ -61,9 +61,9 @@ def build_mjcf(d: Dresser, s: Scenario, room: bool = False) -> str:
     for p in d.parts(fill=s.fill):
         contact = 'contype="1" conaffinity="1"' if p.body in ("carcass",) or p.kind == "load" else \
             'contype="2" conaffinity="0"'  # fmt: skip
-        if p.kind == "fill":
+        if p.kind == "fill":  # contents ride with their drawer or shelf
             contact = 'contype="0" conaffinity="0"'
-        color = COLORS["tv" if "_tv" in p.name else p.kind]
+        color = p.color or COLORS["tv" if "_tv" in p.name else p.kind]
         bodies.setdefault(p.body, []).append(
             f'<geom name="{p.name}" type="box" pos="{_vec(p.center)}" size="{_vec(np.array(p.size) / 2)}" '
             f'mass="{p.mass:.4f}" rgba="{color}" {contact} friction="0.6"/>'
@@ -75,6 +75,9 @@ def build_mjcf(d: Dresser, s: Scenario, room: bool = False) -> str:
     )  # fmt: skip
 
     drawers, actuators = [], []
+    drawer_kg = {}
+    for part in d.parts(fill=s.fill):
+        drawer_kg[part.body] = drawer_kg.get(part.body, 0.0) + part.mass
     for dr in d.drawers():
         name = f"drawer_{dr.index}"
         extra = ""
@@ -88,21 +91,53 @@ def build_mjcf(d: Dresser, s: Scenario, room: bool = False) -> str:
                 f'<geom name="pull" type="capsule" fromto="{_vec((dr.x, y, z))} {_vec((dr.x, y + 0.35, z))}" '
                 f'size="0.012" mass="0.001" rgba=".85 .15 .15 0" contype="0" conaffinity="0"/>'
             )
+        if dr.index in s.loose_drawers:  # only the runners' friction holds it; the stop at full travel catches it
+            slide = f'frictionloss="{d.runner_friction * drawer_kg[name] * 9.81:.3f}" damping="2"'
+        else:
+            slide = 'damping="40"'
+            actuators.append(
+                f'<position name="open_{dr.index}" joint="slide_{dr.index}" kp="20000" dampratio="1" '
+                f'ctrlrange="0 {d.travel(dr):.4f}"/>'
+            )
         drawers.append(
             f'<body name="{name}"><joint name="slide_{dr.index}" type="slide" axis="0 1 0" '
-            f'range="0 {d.travel(dr):.4f}" damping="40"/>{"".join(bodies[name])}{extra}</body>'
+            f'range="0 {d.travel(dr):.4f}" {slide}/>{"".join(bodies[name])}{extra}</body>'
+        )
+
+    # Doors hinge about their outer edge (a wardrobe) or their bottom edge (an oven), held shut, or
+    # open at 90 degrees for the tests (MJCF ranges are in degrees; qpos and ctrl in radians)
+    for door in d.door_list():
+        name = f"door_{door.index}"
+        if door.hinge == "side":
+            pivot, axis = (door.hinge_x, d.depth / 2, (door.z_bottom + door.z_top) / 2), (0, 0, -door.side)
+            edge, weight_size = (door.hinge_x - door.side * door.width, d.depth / 2), "0.05 0.12 0.16"
+        else:
+            pivot, axis = (door.x, d.depth / 2, door.z_bottom), (-1, 0, 0)
+            edge, weight_size = (door.x, d.depth / 2), "0.12 0.16 0.05"
+        extra = ""
+        if door.index == s.load_door:  # the weight hangs from the free edge (shut-door frame)
+            x, y, z = *edge, door.z_top if door.hinge == "bottom" else load_point(d, s)[1]
+            extra = (f'<site name="load_point" pos="{_vec((x, y, z))}" size="0.01"/>'
+                     f'<geom name="weight" type="box" pos="{_vec((x, y, z - 0.18))}" size="{weight_size}" '
+                     'mass="0.001" rgba=".85 .15 .15 0" contype="0" conaffinity="0"/>')  # fmt: skip
+        drawers.append(
+            f'<body name="{name}"><joint name="hinge_{door.index}" type="hinge" pos="{_vec(pivot)}" '
+            f'axis="{_vec(axis)}" range="0 {math.degrees(DOOR_OPEN_RAD):.2f}" damping="5"/>'
+            f"{''.join(bodies[name])}{extra}</body>"
         )
         actuators.append(
-            f'<position name="open_{dr.index}" joint="slide_{dr.index}" kp="20000" dampratio="1" '
-            f'ctrlrange="0 {d.travel(dr):.4f}"/>'
+            f'<position name="swing_{door.index}" joint="hinge_{door.index}" kp="3000" dampratio="1" '
+            f'ctrlrange="0 {DOOR_OPEN_RAD:.4f}"/>'
         )
 
     carcass_extra = ""
-    if s.load_drawer is None and s.horizontal_N:
-        y, z = d.depth / 2, s.horizontal_z
+    if s.load_drawer is None and s.load_door is None and (s.horizontal_N or s.vertical_N):
+        y, z = (d.depth / 2, s.horizontal_z) if s.horizontal_N else load_point(d, s)
         carcass_extra = (
             f'<site name="load_point" pos="0 {y:.4f} {z:.4f}" size="0.01"/>'
             f'<geom name="pull" type="capsule" fromto="0 {y:.4f} {z:.4f} 0 {y + 0.35:.4f} {z:.4f}" size="0.012" '
+            f'mass="0.001" rgba=".85 .15 .15 0" contype="0" conaffinity="0"/>'
+            f'<geom name="weight" type="box" pos="0 {y + 0.07:.4f} {z - 0.18:.4f}" size="0.12 0.05 0.16" '
             f'mass="0.001" rgba=".85 .15 .15 0" contype="0" conaffinity="0"/>'
         )
     world_extra, tendon = "", ""
@@ -278,7 +313,11 @@ def simulate(d: Dresser, s: Scenario, video: Path | None = None, size=(640, 480)
     for dr in d.drawers():
         if dr.index in s.open_drawers:
             data.qpos[model.jnt_qposadr[model.joint(f"slide_{dr.index}").id]] = d.travel(dr)
-            data.ctrl[dr.index] = d.travel(dr)
+            data.ctrl[model.actuator(f"open_{dr.index}").id] = d.travel(dr)
+    for door in d.door_list():
+        if door.index in s.open_doors:
+            data.qpos[model.jnt_qposadr[model.joint(f"hinge_{door.index}").id]] = DOOR_OPEN_RAD
+            data.ctrl[model.actuator(f"swing_{door.index}").id] = DOOR_OPEN_RAD
     mujoco.mj_forward(model, data)
     items = _item_bodies(model, d)
     start_z = {b: data.xipos[b][2] for b in items}
@@ -342,12 +381,14 @@ STAGES = (
 )
 QUIET_BEFORE, QUIET_AFTER, RAMP_S = 1.0, 2.5, 0.6
 FELL_DEG = 45.0  # tilted this far, the piece has fallen over
+DRAWER_OUT_M = 0.05  # a shut drawer slid this far out has "slid open"
 
 
 @dataclass
 class QuakeResult:
-    stages: list[dict]  # per stage: label, pga_g, piece_fell, items_fell
+    stages: list[dict]  # per stage: label, pga_g, piece_fell, items_fell, drawers_out
     fell_at: str | None  # the stage at which the piece fell over, if it did
+    drawers_out_at: str | None = None  # the stage at which the first drawer slid open
     video: Path | None = None
     trace: dict | None = None
 
@@ -409,15 +450,21 @@ def shake(
     seed: int = 1,
     building_hz: float | None = None,
     trace: bool = False,
+    locks: bool = False,
 ) -> QuakeResult:
-    """Shake the piece, drawers shut and full of clothes, against a wall, through STAGES."""
-    s = Scenario("earthquake", "Earthquake", frozenset(), fill=True, anchored=anchored)
+    """Shake the piece, drawers shut and full of clothes, against a wall, through STAGES. Nothing holds
+    the drawers shut but their runners' friction, so they can slide out and shift the weight forward.
+    With drawer interlocks (`locks`) only one can: the top one."""
+    top = d.top_drawer()
+    loose = frozenset({top.index}) if locks and top else frozenset(dr.index for dr in d.drawers())
+    s = Scenario("earthquake", "Earthquake", frozenset(), fill=True, anchored=anchored, loose_drawers=loose)
     model = mujoco.MjModel.from_xml_string(build_mjcf(d, s, room=True))
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
     carcass = model.body("carcass").id
     items = _item_bodies(model, d)
     start_z = {b: data.xipos[b][2] for b in items}
+    slides = {dr.index: model.jnt_qposadr[model.joint(f"slide_{dr.index}").id] for dr in d.drawers()}
     t, acc, disp = ground_motion(dt=model.opt.timestep, seed=seed, building_hz=building_hz)
     starts = QUIET_BEFORE + np.cumsum([0.0] + [st.seconds for st in STAGES])
     stage_at = np.clip(np.searchsorted(starts, t, side="right") - 1, -1, len(STAGES) - 1)
@@ -427,8 +474,9 @@ def shake(
     cam = _camera(d)
     lookat = cam.lookat.copy()
     frame_every = round(1 / FPS / model.opt.timestep)
-    results = [{"label": st.label, "pga_g": st.pga_g, "piece_fell": False, "items_fell": []} for st in STAGES]
-    fell_at, seen, events = None, set(), []
+    results = [{"label": st.label, "pga_g": st.pga_g, "piece_fell": False, "items_fell": [], "drawers_out": []}
+               for st in STAGES]  # fmt: skip
+    fell_at, drawers_at, seen, out, events = None, None, set(), set(), []
     g = -model.opt.gravity[2]
     for i in range(len(t)):
         model.opt.gravity[:] = (-acc[i, 0] * g, -acc[i, 1] * g, -g)
@@ -441,6 +489,16 @@ def shake(
                 events.append(f"It fell over at {STAGES[k].pga_g:.2f} g")
                 if tracer:
                     tracer.events.append((round(float(t[i]), 3), "It fell over"))
+            for j, adr in slides.items():
+                if j not in out and data.qpos[adr] > DRAWER_OUT_M:
+                    out.add(j)
+                    results[k]["drawers_out"].append(j)
+                    if drawers_at is None:
+                        drawers_at = STAGES[k].label
+                        what = "Drawers slid open" if len(loose) > 1 else "A drawer slid open"
+                        events.append(f"{what} at {STAGES[k].pga_g:.2f} g")
+                        if tracer:
+                            tracer.events.append((round(float(t[i]), 3), what))
             for name in _fallen(data, items, start_z):
                 if name not in seen:
                     seen.add(name)
@@ -465,4 +523,4 @@ def shake(
     model.opt.gravity[:] = (0, 0, -g)
     if recorder:
         recorder.close()
-    return QuakeResult(results, fell_at, video, tracer.to_dict() if tracer else None)
+    return QuakeResult(results, fell_at, drawers_at, video, tracer.to_dict() if tracer else None)

@@ -4,9 +4,9 @@
 
 0. A video is reduced to its sharpest frame; photos are turned upright and downscaled.
 1. Muse Spark lists the pieces that could tip and the things standing on each, with noun phrases for SAM.
-2. SAM 3.1 outlines all of them at once. Each item is measured in metres against its piece's width.
-3. Muse Spark matches each piece to the closest preset (presets.toml), overrides what it can see,
-   and weighs the items on top (a TV's weight comes from its measured size instead).
+2. SAM 3.1 outlines all of them at once while Muse Spark matches each piece to the closest preset
+   (presets.toml), overrides what it can see, and weighs the items on top.
+3. Each item is measured in metres against its piece's width (a TV's weight comes from that size).
 4. The template runs every scenario across the plausible range of sizes and densities,
    so an uncertain estimate gives a range, not a falsely precise verdict.
 5. Fixes are re-run through the same physics, and MuJoCo renders before/after videos.
@@ -23,15 +23,15 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
-from pydantic import BaseModel
+from pydantic import ValidationError
 from rich.console import Console
 
-from fall_zero import meta
-from fall_zero.furniture import ANCHOR_RATING_N, IN, Dresser, TopItem, presets
+from fall_zero import knowledge, meta
+from fall_zero.furniture import ANCHOR_RATING_N, IN, Case, TopItem, Zone, examples, with_mass
+from fall_zero.knowledge import CaseSpec, ItemSpec, Judgment, Spotted, Thing, zones_text
 from fall_zero.physics import (
     GRAB_FORCE_RANGE_N,
     HAND_HEIGHT_M,
@@ -45,7 +45,6 @@ from fall_zero.physics import (
 from fall_zero.sim import simulate
 
 console = Console()
-TEMPLATE_KINDS = {"dresser", "chest_of_drawers", "nightstand"}
 SAMPLES = 300
 # Under WSL each rendered frame waits ~65 ms on the GPU copy; 4 processes roughly halve the wait
 RENDER_WORKERS = 4
@@ -94,55 +93,9 @@ def still(media: Path, out_dir: Path) -> tuple[Path, float | None]:
     return dst, at
 
 
-class OnTop(BaseModel):
-    name: str
-    sam_concept: str
-    kind: Literal["tv", "box", "basket", "lamp", "plant", "books", "decor", "other"]
-
-
-class Piece(BaseModel):
-    name: str
-    sam_concept: str  # short noun phrase for SAM, e.g. "white dresser"
-    kind: Literal["dresser", "chest_of_drawers", "nightstand", "bookcase", "tv_stand", "wardrobe", "tv", "other"]
-    on_top: list[OnTop]  # things standing on it
-
-
-class Pieces(BaseModel):
-    pieces: list[Piece]
-
-
-class ItemInfo(BaseModel):
-    """What Muse Spark judges about an item on top, so the fix can target what would hurt someone."""
-
-    name: str
-    short_name: str  # one or two plain words: "plant pot", "bunny", "books"
-    material: Literal["ceramic", "glass", "metal", "wood", "plastic", "electronics", "books_or_paper",
-                      "fabric_or_plush", "plant_and_soil", "other"]  # fmt: skip
-    hard: bool  # would it hurt if it hit a child's head? A plush, cushion or empty basket is not hard
-    breakable: bool  # glass or ceramic that breaks into sharp pieces
-    kg: float
-
-
-# A photo shows an item's width and height; its depth and, except for TVs, its weight are guesses
-ITEM_DEPTH_M = {"tv": 0.22, "box": 0.35, "basket": 0.30, "lamp": 0.20, "plant": 0.25, "books": 0.22,
-                "decor": 0.15, "other": 0.25}  # fmt: skip
-ITEM_KG = {"tv": 8.0, "box": 2.0, "basket": 1.5, "lamp": 2.0, "plant": 3.0, "books": 3.0, "decor": 1.0, "other": 2.0}
-
-
-class Estimate(BaseModel):
-    preset: str  # closest key from presets.toml
-    drawer_rows: int
-    drawer_cols: int
-    width_cm: float
-    height_cm: float
-    depth_cm: float
-    depth_is_guess: bool
-    base: Literal["plinth", "legs"]
-    material: Literal["particleboard", "mdf", "solid_softwood", "solid_hardwood"]
-    brand_model: str | None
-    size_basis: str  # what the size estimate leans on
-    items_on_top: list[ItemInfo]  # one per listed item, in the order given
-    nearby_bed_or_crib: str | None  # what sleeps or plays in front of it, if visible
+# A photo shows an item's width and height; when the model gives no depth or weight, these stand in
+ITEM_DEPTH_M, ITEM_KG = 0.25, 2.0
+RUNNER_FRICTION = {"metal_slides": 0.05, "wood_runners": 0.25}  # see Case.runner_friction
 
 
 async def segment_all(image: Path, concepts: list[str]) -> list[list[meta.Segment]]:
@@ -150,48 +103,17 @@ async def segment_all(image: Path, concepts: list[str]) -> list[list[meta.Segmen
     return await asyncio.gather(*(meta.segment_image(image, c, include_confidence=True) for c in concepts))
 
 
-def identify(image: Path) -> list[Piece]:
-    prompt = (
-        "List every piece of furniture in this room that could tip over onto a person: dressers, chests, "
-        "nightstands, bookcases, TV stands, wardrobes, and TVs standing on their own. For each, give a short "
-        "noun phrase that names it uniquely for an image segmentation model (e.g. 'white dresser'). Under "
-        "on_top, list every separate thing standing on top of it (a TV, each box or stack of boxes, baskets, "
-        "lamps, plants, books), each with its own short noun phrase. Something standing on a piece goes in "
-        "that piece's on_top, never in the main list."
-    )
-    pieces = meta.respond_json(prompt, Pieces, images=[image], effort="low").pieces
-    if any(t.kind == "tv" for p in pieces for t in p.on_top):  # a TV listed twice: keep it on its piece
-        pieces = [p for p in pieces if p.kind != "tv"]
-    return pieces
-
-
-def _box_text(box) -> str:
-    return "({},{})-({},{})".format(*(round(v) for v in box))
-
-
-def estimate(image: Path, piece: Piece, box: tuple[float, ...], items: list[tuple[OnTop, tuple | None]]) -> Estimate:
-    w, h = Image.open(image).size
-    x1, y1, x2, y2 = (round(v) for v in box)
-    on_top = "; ".join(f"{i + 1}. {t.name}" + (f" at {_box_text(b)}" if b else "") for i, (t, b) in enumerate(items))
-    library = "\n".join(
-        f"- {key}: {label} ({d.width * 100:.0f} x {d.depth * 100:.0f} x {d.height * 100:.0f} cm, {d.material})"
-        for key, (label, d) in presets().items()
-    )
-    prompt = (
-        f"This {w}x{h} photo shows a {piece.name} inside the pixel box ({x1},{y1})-({x2},{y2}). "
-        f"Pick the closest preset from this library:\n{library}\n"
-        "Then estimate its real dimensions in cm using objects of known size in the room (doors ~203 cm tall, "
-        "outlet plates ~11.4 cm, beds and cribs of standard size), its drawer grid (rows x columns), whether "
-        "it stands on a solid plinth or on legs, its likely panel material, and the brand or model if "
-        "recognizable. Depth is rarely visible: give your best guess and set depth_is_guess. Name any bed or "
-        "crib in front of it in two or three plain words ('crib', 'toddler bed'). "
-        + (f"For each item standing on top, in this order, as items_on_top: {on_top}. Give a one- or "
-           "two-word short_name, its main material, whether it is hard (would it hurt if it fell on a "
-           "child's head? plush toys, cushions and fabric are not), whether it breaks into sharp pieces, "
-           "and its weight in kg including contents (a pot with soil, a full box)."
-           if items else "Nothing stands on top: return an empty items_on_top.")
-    )  # fmt: skip
-    return meta.respond_json(prompt, Estimate, images=[image], effort="medium")
+def read_piece(image: Path, piece: Spotted, room: str, people: str) -> CaseSpec | Judgment:
+    """What the engine builds, or a verdict from the references. A piece the survey thought
+    buildable but whose description doesn't hold together is judged instead."""
+    if piece.engine == "case":
+        try:
+            spec = knowledge.describe(image, piece, room)
+            if spec.zones and spec.width_cm > 0 and spec.height_cm > 0:
+                return spec
+        except (ValidationError, ValueError):
+            pass
+    return knowledge.judge(image, piece, room, people)
 
 
 def on_top_box(piece_box, segments) -> tuple[float, ...] | None:
@@ -212,20 +134,24 @@ def tv_kg(width_m: float) -> float:
     return 0.0045 * (1.147 * width_m / IN) ** 2
 
 
-def measure_items(d: Dresser, piece_box, items: list[tuple[OnTop, tuple | None]], infos: list[ItemInfo]):
+def measure_items(d: Case, piece_box, items: list[tuple[Thing, tuple | None]], infos: list[ItemSpec]):
     """Each item's size and place on the top in metres, scaled by the piece's known width. An item
     whose outline sits on another item's (a box on a basket) stands on it."""
+    if piece_box is None:  # no outline of the piece: nothing to measure against
+        items = [(t, None) for t, _ in items]
+        piece_box = (0, 0, 1, 1)
     m_per_px = d.width / (piece_box[2] - piece_box[0])
     cx = (piece_box[0] + piece_box[2]) / 2
     placed: list[tuple[int, TopItem, tuple | None]] = []
     # lowest outline first, so supports are placed before what stands on them
     for i, (thing, box) in sorted(enumerate(items), key=lambda t: -(t[1][1][3] if t[1][1] else 0)):
         info = infos[i] if i < len(infos) else None
-        kg = info.kg if info and info.kg > 0 else ITEM_KG[thing.kind]
+        kg = info.kg if info and info.kg > 0 else ITEM_KG
         traits = {"short": info.short_name, "hard": info.hard, "breakable": info.breakable} if info else {}
-        depth = min(ITEM_DEPTH_M[thing.kind], d.depth)
+        shape = info.shape if info else "block"
+        depth = min(info.depth_cm / 100 if info and info.depth_cm > 0 else ITEM_DEPTH_M, d.depth)
         if box is None:
-            placed.append((i, TopItem(thing.name, thing.kind, kg, 0.3, depth, 0.3, **traits), None))
+            placed.append((i, TopItem(thing.name, shape, kg, 0.3, depth, 0.3, **traits), None))
             continue
         w = min((box[2] - box[0]) * m_per_px, d.width)
         h = (box[3] - box[1]) * m_per_px
@@ -239,13 +165,13 @@ def measure_items(d: Dresser, piece_box, items: list[tuple[OnTop, tuple | None]]
             if overlap > 0.3 * min(box[2] - box[0], b[2] - b[0]) and above:
                 z = max(z, below.z + below.height)
                 h = min(h, max((b[1] - box[1]) * m_per_px, 0.05))  # only the part above its support
-        if thing.kind == "tv":
+        if shape == "screen":
             kg = tv_kg(w)
-        placed.append((i, TopItem(thing.name, thing.kind, kg, w, depth, h, x, 0.0, z, **traits), box))
+        placed.append((i, TopItem(thing.name, shape, kg, w, depth, h, x, 0.0, z, **traits), box))
     return separate(d, [item for _, item, _ in sorted(placed, key=lambda p: p[0])])
 
 
-def separate(d: Dresser, items: list[TopItem]) -> list[TopItem]:
+def separate(d: Case, items: list[TopItem]) -> list[TopItem]:
     """Outlines measured from a photo overlap a little; solid bodies can't. Push items standing side by
     side apart across the top, and if the top is too narrow, stand the later one in front of the other."""
     items = list(items)
@@ -268,26 +194,32 @@ def separate(d: Dresser, items: list[TopItem]) -> list[TopItem]:
     return items
 
 
-def to_template(e: Estimate) -> Dresser:
-    """The preset, overridden by what the photo shows. A guessed depth keeps the preset's."""
-    library = presets()
-    if e.preset not in library:  # fall back to the preset nearest in size
-        e.preset = min(library, key=lambda k: abs(library[k][1].height * 100 - e.height_cm)
-                       + abs(library[k][1].width * 100 - e.width_cm))  # fmt: skip
-    base = library[e.preset][1]
-    return replace(
+def to_template(e: CaseSpec) -> Case:
+    """The closest worked example, changed to what the photo shows. A guessed depth keeps the
+    example's; a known weight scales the panels to match it."""
+    library = examples()
+    if e.example not in library:  # none fits: start from the example nearest in size
+        e.example = min(library, key=lambda k: abs(library[k][1].height * 100 - e.height_cm)
+                        + abs(library[k][1].width * 100 - e.width_cm))  # fmt: skip
+    base = library[e.example][1]
+    zones = tuple(Zone(z.kind, max(z.share, 0.05), max(z.rows, 1), max(z.cols, 1), max(z.shelves, 0), z.hinge,
+                       z.contents, min(max(z.fill, 0.0), 1.0)) for z in e.zones)  # fmt: skip
+    d = replace(
         base,
         width=e.width_cm / 100,
         height=e.height_cm / 100,
         depth=base.depth if e.depth_is_guess else e.depth_cm / 100,
-        rows=max(1, e.drawer_rows),
-        cols=max(1, e.drawer_cols),
+        zones=zones or base.zones,
         base=e.base,
+        base_height=e.base_height_cm / 100 if e.base_height_cm > 0 else base.base_height,
         material=e.material,
+        runner_friction=RUNNER_FRICTION.get(e.drawer_runners, base.runner_friction),
+        density_scale=1.0,
     )
+    return with_mass(d, e.known_mass_kg)
 
 
-def plausible(d: Dresser, depth: float, size: float = 0.10, n: int = SAMPLES, seed: int = 0) -> list[Dresser]:
+def plausible(d: Case, depth: float, size: float = 0.10, n: int = SAMPLES, seed: int = 0) -> list[Case]:
     """Width and height within ±`size`, depth within ±`depth`, density ±15%, top items ±30%.
     From a photo: size 0.10, depth 0.15 when guessed (0.05 when visible)."""
     rng = random.Random(seed)
@@ -297,8 +229,8 @@ def plausible(d: Dresser, depth: float, size: float = 0.10, n: int = SAMPLES, se
                     rng.uniform(1 - depth, 1 + depth))  # fmt: skip
         k, top = rng.uniform(0.85, 1.15), rng.uniform(0.7, 1.3)
         items = tuple(replace(i, mass=i.mass * top) for i in d.top_items)
-        out.append(replace(d, width=d.width * w, height=d.height * h, depth=d.depth * dp, density_scale=k,
-                           top_items=items))  # fmt: skip
+        out.append(replace(d, width=d.width * w, height=d.height * h, depth=d.depth * dp,
+                           density_scale=d.density_scale * k, top_items=items))  # fmt: skip
     return out
 
 
@@ -306,7 +238,7 @@ def verdict(tip_share: float) -> str:
     return "pass" if tip_share <= 0.05 else "fail" if tip_share >= 0.95 else "uncertain"
 
 
-def child_verdicts(variants: list[Dresser], **kw) -> dict[str, dict]:
+def child_verdicts(variants: list[Case], **kw) -> dict[str, dict]:
     out = {}
     for i, s in enumerate(f2057_tests(variants[0], **kw)):
         results = [statics(v, f2057_tests(v, **kw)[i]) for v in variants]
@@ -317,7 +249,7 @@ def child_verdicts(variants: list[Dresser], **kw) -> dict[str, dict]:
     return out
 
 
-def elderly_verdict(variants: list[Dresser]) -> dict:
+def elderly_verdict(variants: list[Case]) -> dict:
     forces = [tip_force(v, min(HAND_HEIGHT_M, v.height), fill=True) for v in variants]
     lo, hi = GRAB_FORCE_RANGE_N
     v = "fail" if max(forces) < lo else "pass" if min(forces) > hi else "uncertain"
@@ -325,7 +257,7 @@ def elderly_verdict(variants: list[Dresser]) -> dict:
             "assumption": elderly_test(variants[0]).assumption}  # fmt: skip
 
 
-def fixes(d: Dresser) -> list[dict]:
+def fixes(d: Case) -> list[dict]:
     """Each fix re-runs the physics on the nominal estimate."""
     base = {s.key: statics(d, s).tips for s in f2057_tests(d)}
     failing = [k for k, tipped in base.items() if tipped]
@@ -337,10 +269,10 @@ def fixes(d: Dresser) -> list[dict]:
                 "fixes": failing, "detail": f"worst case loads the strap to {need:.0f} N of its "
                 f"{ANCHOR_RATING_N:.0f} N rating", "works": need <= ANCHOR_RATING_N})  # fmt: skip
 
-    one = frozenset({d.top_drawer().index})
-    locked = {s.key: statics(d, s).tips for s in f2057_tests(d, only_open=one)}
-    out.append({"fix": "Fit drawer locks so only one drawer opens at a time",
-                "fixes": [k for k in failing if not locked[k]], "works": not any(locked.values())})  # fmt: skip
+    if (top := d.top_drawer()) and len(d.drawers()) > 1:
+        locked = {s.key: statics(d, s).tips for s in f2057_tests(d, only_open=frozenset({top.index}))}
+        out.append({"fix": "Fit drawer locks so only one drawer opens at a time",
+                    "fixes": [k for k in failing if not locked[k]], "works": not any(locked.values())})  # fmt: skip
 
     if d.top_items:
         cleared = replace(d, top_items=())
@@ -381,43 +313,47 @@ def analyze(
         secs[stage] = secs.get(stage, 0.0) + time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    with status("Finding furniture that could tip · Muse Spark"):
-        pieces = identify(image)
-    lap("identify", t0)
+    with status("Looking for anything that could tip · Muse Spark"):
+        found = knowledge.survey(image)
+    lap("survey", t0)
+    report |= {"room": found.room, "people": found.people}
+    pieces = found.pieces
 
-    t0 = time.perf_counter()
+    # Each piece is described for the engine (or judged) by name, so Muse Spark reads every piece
+    # while SAM outlines everything
     things = [t for p in pieces for t in p.on_top]
     concepts = [p.sam_concept for p in pieces] + [t.sam_concept for t in things]
-    with status(f"Outlining {len(concepts)} object{'s' * (len(concepts) != 1)} · SAM 3.1"):
-        found = asyncio.run(segment_all(image, concepts))
-    lap("segment", t0)
+    outlining = f"Outlining {len(concepts)} object{'s' * (len(concepts) != 1)}"
+    if pieces:
+        names = pieces[0].name if len(pieces) == 1 else f"{len(pieces)} pieces"
+        outlining += f" and sizing up the {names} · SAM 3.1, Muse Spark"
+    else:
+        outlining += " · SAM 3.1"
+    t0 = time.perf_counter()
+    with status(outlining), ThreadPoolExecutor() as pool:
+        reading = [pool.submit(read_piece, image, p, found.room, found.people) for p in pieces]
+        outlines = asyncio.run(segment_all(image, concepts))
+        lap("segment", t0)
+        read = [job.result() for job in reading]
+    lap("describe", t0)  # overlaps "segment"
 
-    jobs, thing_segments = [], iter(found[len(pieces) :])
-    for piece, segments in zip(pieces, found, strict=False):
+    jobs, thing_segments = [], iter(outlines[len(pieces) :])
+    for piece, segments, spec in zip(pieces, outlines, read, strict=False):
         entry: dict = {"piece": piece.model_dump()}
         report["pieces"].append(entry)
         own = [next(thing_segments) for _ in piece.on_top]
-        if piece.kind not in TEMPLATE_KINDS:
-            entry["status"] = "cannot determine: no template for this kind yet"
-            continue
-        if not segments:
-            entry["status"] = "cannot determine: SAM found no match"
-            continue
-        box = max(segments, key=lambda s: (s.box[2] - s.box[0]) * (s.box[3] - s.box[1])).box
+        box = max(segments, key=lambda s: (s.box[2] - s.box[0]) * (s.box[3] - s.box[1])).box if segments else None
         entry["box"] = box
-        items = [(t, on_top_box(box, segs)) for t, segs in zip(piece.on_top, own, strict=True)]
-        jobs.append((entry, piece, box, items))
-
-    t0 = time.perf_counter()
-    names = jobs[0][1].name if len(jobs) == 1 else f"{len(jobs)} pieces"
-    with status(f"Measuring the {names} · Muse Spark"), ThreadPoolExecutor() as pool:
-        estimates = list(pool.map(lambda j: estimate(image, *j[1:]), jobs))
-    lap("estimate", t0)
+        if isinstance(spec, Judgment):
+            entry |= {"status": "judged", "judgment": spec.model_dump()}
+            continue
+        items = [(t, on_top_box(box, segs) if box else None) for t, segs in zip(piece.on_top, own, strict=True)]
+        jobs.append((entry, box, items, spec))
 
     t0 = time.perf_counter()
     if jobs and on_step:
         on_step(f"Testing a climbing child, an adult and an earthquake · physics, {SAMPLES} sizes")
-    for (entry, _, box, items), est in zip(jobs, estimates, strict=True):
+    for entry, box, items, est in jobs:
         d = to_template(est)
         d = replace(d, top_items=tuple(measure_items(d, box, items, est.items_on_top)))
         variants = plausible(d, depth=0.15 if est.depth_is_guess else 0.05)
@@ -425,7 +361,7 @@ def analyze(
             "estimate": est.model_dump(),
             "template": {k: v for k, v in asdict(d).items() if k != "notes"},
             "items": [
-                {"name": t.name, "kind": t.kind, "box": b, "kg": item.mass}
+                {"name": t.name, "kind": item.kind, "box": b, "kg": item.mass}
                 for (t, b), item in zip(items, d.top_items, strict=True)
             ],  # fmt: skip
             "mass_kg": {"empty": d.mass(), "with_clothes": d.mass(fill=True)},
@@ -464,11 +400,11 @@ def analyze(
     return report
 
 
-def _render(job: tuple[Dresser, Scenario, Path]):
+def _render(job: tuple[Case, Scenario, Path]):
     return simulate(*job[:2], video=job[2])
 
 
-def render_videos(pieces: list[tuple[Dresser, str]], out_dir: Path) -> list[dict]:
+def render_videos(pieces: list[tuple[Case, str]], out_dir: Path) -> list[dict]:
     """Every scenario as-is, plus the anchored version of anything statics says tips (the
     simulation agrees with statics in every tested case), all rendered in parallel."""
     jobs, slots = [], []
@@ -494,15 +430,21 @@ def print_report(report: dict) -> None:
     colors = {"pass": "green", "fail": "red", "uncertain": "yellow"}
     for p in report["pieces"]:
         console.rule(p["piece"]["name"])
+        if p["status"] == "judged":
+            j = p["judgment"]
+            for risk in ("child", "adult", "quake"):
+                console.print(f"  [bold]{j[risk]['status'].upper():9s}[/] {risk}: {j[risk]['says']}")
+            console.print(f"  Judged from: {j['basis']}")
+            continue
         if p["status"] != "analyzed":
             console.print(f"[yellow]{p['status']}[/]")
             continue
         e, t = p["estimate"], p["template"]
         console.print(
-            f"Preset {e['preset']}: {t['width'] * 100:.0f} x {t['depth'] * 100:.0f}"
-            f"{' (preset depth)' if e['depth_is_guess'] else ''} x {t['height'] * 100:.0f} cm, "
-            f"{t['rows']}x{t['cols']} drawers, {t['material']}, ~{p['mass_kg']['empty']:.0f} kg empty "
-            f"({p['mass_kg']['with_clothes']:.0f} kg with clothes). Size from: {e['size_basis']}"
+            f"Like {e['example']}: {t['width'] * 100:.0f} x {t['depth'] * 100:.0f}"
+            f"{' (depth guessed)' if e['depth_is_guess'] else ''} x {t['height'] * 100:.0f} cm, "
+            f"{zones_text(Case.from_dict(t).zones)}, {t['material']}, ~{p['mass_kg']['empty']:.0f} kg empty "
+            f"({p['mass_kg']['with_clothes']:.0f} kg loaded). Size from: {e['size_basis']}"
         )
         for r in p["child"].values():
             c = colors[r["verdict"]]

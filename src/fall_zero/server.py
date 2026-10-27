@@ -9,6 +9,7 @@ import json
 import re
 import tempfile
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -22,7 +23,7 @@ from pydantic import BaseModel
 
 from fall_zero import agent, meta, voice
 from fall_zero.analyze import VIDEO_SUFFIXES, analyze
-from fall_zero.assess import assess, assess_all, trajectory
+from fall_zero.assess import CARD_STATUSES, assess_all, card, trajectory, warm
 from fall_zero.clients import NotConfigured, chat, providers
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,7 +32,14 @@ RUNS.mkdir(parents=True, exist_ok=True)
 THREADS = ROOT / "out" / "threads"  # saved chats, one JSON file each, so they can be reopened
 THREADS.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Fall-Zero")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    asyncio.get_running_loop().run_in_executor(None, warm)  # the earthquake workers, in the background
+    yield
+
+
+app = FastAPI(title="Fall-Zero", lifespan=lifespan)
 
 
 @app.exception_handler(NotConfigured)
@@ -141,7 +149,7 @@ async def turn(
                         report, image = value, Path(value["image"])
                 yield _line(type="step", text="Shaking it in simulated earthquakes · MuJoCo")
                 cards = await run_in_threadpool(assess_all, report, True)
-                others = [p["piece"]["name"] for p in report["pieces"] if p["status"] != "analyzed"]
+                others = [p["piece"]["name"] for p in report["pieces"] if p["status"] not in CARD_STATUSES]
                 files = f"/files/{upload.parent.name}"
                 yield _line(type="report", run=upload.parent.name, still=f"{files}/{image.name}",
                             upload=f"{files}/{upload.name}", size=report["size"], frame_at_s=report["frame_at_s"],
@@ -157,7 +165,7 @@ async def turn(
 
 class AssessIn(BaseModel):
     run: str
-    piece: int  # index among the analyzed pieces, as in the report event's `cards`
+    piece: int  # index among the carded pieces, as in the report event's `cards`
     answers: dict = {}
 
 
@@ -165,28 +173,31 @@ def _entry(run: str, piece: int) -> dict:
     if not re.fullmatch(r"[0-9a-f]{12}", run) or not (RUNS / run / "report.json").exists():
         raise HTTPException(404, "unknown run")
     report = json.loads((RUNS / run / "report.json").read_text())
-    analyzed = [p for p in report["pieces"] if p["status"] == "analyzed"]
-    if not 0 <= piece < len(analyzed):
+    carded = [p for p in report["pieces"] if p["status"] in CARD_STATUSES]
+    if not 0 <= piece < len(carded):
         raise HTTPException(404, "unknown piece")
-    return analyzed[piece]
+    return carded[piece]
 
 
 @app.post("/api/assess")
 def assess_route(body: AssessIn) -> dict:
     """Re-check one card after the user answers a question or marks a fix done."""
-    return assess(_entry(body.run, body.piece), body.answers, simulate_quakes=True)
+    return card(_entry(body.run, body.piece), body.answers, simulate_quakes=True)
 
 
 class SimulateIn(AssessIn):
     scenario: Literal["quake", "child", "adult"] = "quake"
-    variant: Literal["as_is", "anchor", "moved"] = "as_is"
+    variant: Literal["as_is", "anchor", "locks", "moved"] = "as_is"
     seed: int = 1
 
 
 @app.post("/api/simulate")
 def simulate_route(body: SimulateIn) -> dict:
     """The motion of one simulation, for the card's 3D viewer to play."""
-    return trajectory(_entry(body.run, body.piece), body.answers, body.scenario, body.variant, body.seed)
+    entry = _entry(body.run, body.piece)
+    if entry["status"] != "analyzed":
+        raise HTTPException(404, "this piece was judged, not simulated")
+    return trajectory(entry, body.answers, body.scenario, body.variant, body.seed)
 
 
 def _thread_file(tid: str) -> Path:
@@ -225,6 +236,16 @@ def delete_thread(tid: str) -> dict:
     return {"deleted": tid}
 
 
+class Revalidated(StaticFiles):
+    """The page's own files: the browser asks again on every load (a 304 when unchanged), so it never
+    runs a stale script after an update."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 app.mount("/files", StaticFiles(directory=RUNS), name="files")
 app.mount("/samples", StaticFiles(directory=ROOT / "samples"), name="samples")
-app.mount("/", StaticFiles(directory=ROOT / "web", html=True), name="web")  # last: catches every other path
+app.mount("/", Revalidated(directory=ROOT / "web", html=True), name="web")  # last: catches every other path

@@ -33,7 +33,7 @@ const ICON = {
   replay: svg('<path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/>'),
 };
 const RISKS = [["child", "Child climbs"], ["adult", "Adult leans"], ["quake", "Earthquake"]];
-const ITEM_WORD = { tv: "TV", box: "Boxes", basket: "Basket", lamp: "Lamp", plant: "Plant", books: "Books", decor: "Decor", other: "Item" };
+const ITEM_WORD = { tv: "TV", screen: "TV" }; // only when the model gave no short name
 const WORD = { tips: "Tips", maybe: "Maybe", holds: "Holds" };
 const PLACEHOLDER = matchMedia("(max-width: 560px)").matches
   ? "Photo, video or a question"
@@ -393,7 +393,7 @@ function stillFigure(ev) {
   // what stands on each piece: dashed outlines with a small tag, drawn first so the pieces sit on top
   const things = ev.cards.flatMap((c) => c.items.filter((it) => it.box)).map((it, j) => {
     const [x1, y1, x2, y2] = it.box;
-    const word = ITEM_WORD[it.kind] || "Item";
+    const word = it.short ? it.short[0].toUpperCase() + it.short.slice(1) : ITEM_WORD[it.kind] || "Item";
     const tw = word.length * r * 0.62 + r * 0.8;
     return `<g class="thing" style="--i:${j}">
       <rect x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" pathLength="1" stroke="#fff" stroke-dasharray="1"/>
@@ -430,7 +430,7 @@ function render(p, prev = null) {
     const changed = prev && prev.risks[k].status !== r.status;
     return `<div class="risk ${r.status}${changed ? " pop" : ""}" title="${esc(r.says)}">
       <div class="rtop"><span class="ricon">${ICON[k]}</span><span class="rstate">${ICON[r.status]}${WORD[r.status]}</span></div>
-      <div class="rlabel">${label}${r.simulated ? `<span class="simtag">simulated</span>` : ""}</div><div class="rsays">${esc(r.says)}</div></div>`;
+      <div class="rlabel">${label}${r.simulated ? `<span class="simtag">simulated</span>` : r.judged ? `<span class="simtag judged">judged</span>` : ""}</div><div class="rsays">${esc(r.says)}</div></div>`;
   }).join("");
 
   const questions = c.questions.map((q) => {
@@ -478,7 +478,7 @@ function render(p, prev = null) {
     ${c.note ? `<p class="note">${esc(c.note)}</p>` : ""}`;
 
   if (p.marker) p.marker.style.color = `var(--${c.status})`;
-  mountSim(p);
+  if (!c.judged) mountSim(p); // a judged piece has no model to play
 
   p.el.querySelectorAll("[data-q]").forEach((qEl) => {
     const key = qEl.dataset.q;
@@ -532,6 +532,7 @@ function mountSim(p) {
   const fixes = Object.fromEntries(c.fixes.map((f) => [f.key, f]));
   const variants = [["as_is", c.answers.anchored === "yes" ? "As it is now (strapped)" : "As it is now"]];
   if (fixes.anchor && !fixes.anchor.done) variants.push(["anchor", "Strapped"]);
+  if (fixes.locks && !fixes.locks.done) variants.push(["locks", "Drawer locks"]);
   if (fixes.moved && !fixes.moved.done) variants.push(["moved", "Hard things moved"]);
   if (!variants.some(([k]) => k === p.sim.variant)) p.sim.variant = "as_is";
   const tabs = p.sim.el.querySelector(".sim-tabs");
@@ -628,8 +629,9 @@ function thumbStyle(p, box = p.card.box, S = 56) {
 function detailsHTML(ev) {
   const rows = ev.cards.map((c, i) => {
     const d = c.details;
+    if (c.judged) return `<tr><td>${i + 1}. ${esc(c.name)}</td><td>Judged, not simulated (${esc(d.family)}): ${esc(d.judged)}</td></tr>`;
     return `<tr><td>${i + 1}. ${esc(c.name)}</td><td>${d.size_cm.join(" × ")} cm${d.depth_guessed ? " (depth guessed)" : ""},
-      ~${d.mass_kg} kg empty, ${d.mass_with_clothes_kg} kg with clothes, ${d.top_load_kg} kg on top, ${esc(d.material)},
+      ~${d.mass_kg} kg empty, ${d.mass_with_clothes_kg} kg loaded, ${d.top_load_kg} kg on top, ${esc(d.material)},
       preset ${esc(d.preset)}, starts rocking at ${d.rocking_starts_g} g. Size from: ${esc(d.size_basis)}</td></tr>`;
   }).join("");
   const timing = Object.entries(ev.report.seconds || {}).map(([k, v]) => `${k} ${v.toFixed(1)} s`).join(", ");

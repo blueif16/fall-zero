@@ -1,0 +1,189 @@
+# Worked examples: real-world pieces described the way the engine reads them. The model compares a
+# photographed piece against these, picks the closest, and changes what the photo shows. Add one here
+# to teach it a new kind of piece; no code changes.
+#
+# Every key except `label` and `mass_kg` is a Case field (furniture.py). `zones` stack from the floor
+# up: kind = drawers | doors | open, share = its share of the inside height, rows/cols, shelves,
+# hinge = side | bottom (doors), contents = a key of contents.toml, fill = the share it takes.
+# `mass_kg` is the empty weight when it is known; the panels are scaled to match it. Units: metres.
+
+# --- Clothing storage (bedrooms, nurseries): ASTM F2057-23 / 16 CFR 1261 apply ---------------------
+
+[dresser_wide_6]
+label = "Wide low dresser, 6 drawers in 2 columns (IKEA MALM 6-drawer size)"
+width = 1.60
+depth = 0.48
+height = 0.78
+zones = [{ kind = "drawers", rows = 3, cols = 2 }]
+material = "particleboard"
+
+[dresser_3]
+label = "Standard dresser, 3 full-width drawers (IKEA MALM 3-drawer size)"
+width = 0.80
+depth = 0.48
+height = 0.78
+zones = [{ kind = "drawers", rows = 3 }]
+material = "particleboard"
+
+[chest_tall_6]
+label = "Tall narrow chest, 5-6 stacked drawers"
+width = 0.80
+depth = 0.48
+height = 1.23
+zones = [{ kind = "drawers", rows = 6 }]
+material = "particleboard"
+
+[chest_tall_5_wood]
+label = "Tall solid-wood chest, 5 drawers"
+width = 0.90
+depth = 0.50
+height = 1.20
+zones = [{ kind = "drawers", rows = 5 }]
+material = "solid_softwood"
+runner_friction = 0.25  # wood runners
+
+[kids_dresser_3]
+label = "Low kids' dresser or changing-table base, 3 drawers"
+width = 0.75
+depth = 0.42
+height = 0.70
+zones = [{ kind = "drawers", rows = 3 }]
+material = "mdf"
+
+[dresser_hardwood_9]
+label = "Wide solid-hardwood dresser, 9 drawers in 3 columns"
+width = 1.50
+depth = 0.50
+height = 0.85
+zones = [{ kind = "drawers", rows = 3, cols = 3 }]
+material = "solid_hardwood"
+runner_friction = 0.25  # wood runners
+
+[nightstand_2]
+label = "Nightstand, 2 drawers"
+width = 0.45
+depth = 0.40
+height = 0.55
+zones = [{ kind = "drawers", rows = 2 }]
+material = "particleboard"
+
+[dresser_legs_6]
+label = "Mid-century dresser on legs, 6 drawers in 2 columns"
+width = 1.40
+depth = 0.46
+height = 0.80
+zones = [{ kind = "drawers", rows = 3, cols = 2 }]
+base = "legs"
+base_height = 0.18
+material = "solid_hardwood"
+runner_friction = 0.25  # wood runners
+
+[wardrobe_2_door]
+label = "Wardrobe, 2 full-height doors, hanging rail (IKEA PAX 100 cm size)"
+width = 1.00
+depth = 0.58
+height = 2.01
+zones = [{ kind = "doors", cols = 2, shelves = 1, contents = "hanging_clothes" }]
+material = "particleboard"
+
+[wardrobe_doors_drawers]
+label = "Wardrobe or armoire, 2 doors above 2 drawers"
+width = 1.00
+depth = 0.55
+height = 1.90
+zones = [{ kind = "drawers", share = 0.25, rows = 2 }, { kind = "doors", share = 0.75, cols = 2, shelves = 1, contents = "hanging_clothes" }]
+material = "particleboard"
+
+# --- Shelving and media furniture: no mandatory standard; the child tests are borrowed --------------
+
+[bookcase_tall]
+label = "Tall narrow bookcase, open shelves (IKEA BILLY 80 cm size)"
+width = 0.80
+depth = 0.28
+height = 2.02
+zones = [{ kind = "open", shelves = 5, contents = "books", fill = 0.5 }]
+material = "particleboard"
+
+[bookcase_cube_2x4]
+label = "Cube shelf, 2 x 4 open compartments (IKEA KALLAX 2x4 size)"
+width = 0.77
+depth = 0.39
+height = 1.47
+zones = [{ kind = "open", cols = 2, shelves = 3, contents = "toys", fill = 0.5 }]
+material = "particleboard"
+
+[tv_stand_open]
+label = "Low TV bench, open shelf"
+width = 1.20
+depth = 0.40
+height = 0.45
+zones = [{ kind = "open", shelves = 1, contents = "media", fill = 0.3 }]
+material = "particleboard"
+
+[tv_stand_drawers]
+label = "Media console, 3 drawers side by side"
+width = 1.50
+depth = 0.42
+height = 0.55
+zones = [{ kind = "drawers", rows = 1, cols = 3, contents = "media", fill = 0.5 }]
+material = "particleboard"
+
+[hutch_kitchen]
+label = "Kitchen hutch or china cabinet: doors and a drawer row below, open shelves above"
+width = 1.00
+depth = 0.45
+height = 1.95
+zones = [{ kind = "doors", share = 0.38, cols = 2, shelves = 1, contents = "dishes", fill = 0.5 }, { kind = "drawers", share = 0.10, rows = 1, cols = 2, contents = "linens", fill = 0.6 }, { kind = "open", share = 0.52, shelves = 2, contents = "dishes", fill = 0.4 }]
+material = "solid_softwood"
+
+[display_cabinet]
+label = "Display or curio cabinet, tall, 2 glass doors"
+width = 0.80
+depth = 0.40
+height = 1.80
+zones = [{ kind = "doors", cols = 2, shelves = 4, contents = "dishes", fill = 0.3 }]
+material = "particleboard"
+
+# --- Offices, garages and kitchens ----------------------------------------------------------------
+
+[filing_cabinet_4]
+label = "Vertical steel filing cabinet, 4 drawers"
+width = 0.38
+depth = 0.71
+height = 1.32
+zones = [{ kind = "drawers", rows = 4, contents = "files", fill = 0.8 }]
+material = "steel"
+base_height = 0.02
+mass_kg = 38
+
+[tool_chest_rolling]
+label = "Rolling steel tool chest or cabinet, many shallow drawers"
+width = 0.68
+depth = 0.46
+height = 1.00
+zones = [{ kind = "drawers", rows = 6, contents = "tools", fill = 0.6 }]
+material = "steel"
+base = "legs"
+base_height = 0.12
+mass_kg = 55
+
+[shelving_steel_5]
+label = "Steel shelving unit, 5 open shelves (garage, pantry)"
+width = 0.90
+depth = 0.45
+height = 1.80
+zones = [{ kind = "open", shelves = 4, contents = "pantry", fill = 0.4 }]
+material = "steel"
+base = "legs"
+base_height = 0.03
+mass_kg = 20
+
+[range_30in]
+label = "Freestanding kitchen range, 30 in (76 cm), oven door hinged at the bottom"
+width = 0.76
+depth = 0.66
+height = 0.91
+zones = [{ kind = "drawers", share = 0.18, rows = 1 }, { kind = "doors", share = 0.62, hinge = "bottom" }, { kind = "open", share = 0.20 }]
+material = "steel"
+base_height = 0.03
+mass_kg = 70

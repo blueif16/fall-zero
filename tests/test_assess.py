@@ -2,14 +2,14 @@
 
 from dataclasses import asdict
 
-from fall_zero.assess import assess, item_hazard, trajectory
-from fall_zero.furniture import TopItem, presets
+from fall_zero.assess import assess, item_hazard, judged_card, trajectory
+from fall_zero.furniture import Case, TopItem, examples
 
 
 def entry(key: str, **estimate) -> dict:
     """A report entry for a preset, as analyze() would produce it."""
-    label, d = presets()[key]
-    est = {"preset": key, "depth_is_guess": True, "items_on_top": [], "nearby_bed_or_crib": None,
+    label, d = examples()[key]
+    est = {"example": key, "depth_is_guess": True, "items_on_top": [], "nearby": None,
            "size_basis": "test"} | estimate  # fmt: skip
     return {"piece": {"name": label}, "template": {k: v for k, v in asdict(d).items() if k != "notes"}, "estimate": est}
 
@@ -63,7 +63,7 @@ def test_soft_or_light_things_on_top_are_never_the_fix():
 
 def test_a_tv_on_top_is_always_a_danger():
     tv = TopItem("flat-screen TV", "tv", mass=4.0, width=0.7, depth=0.2, height=0.45, short="TV")
-    assert item_hazard(presets()["dresser_3"][1], tv, None)["level"] == "danger"
+    assert item_hazard(examples()["dresser_3"][1], tv, None)["level"] == "danger"
 
 
 def test_the_viewer_gets_every_body_every_frame():
@@ -71,3 +71,46 @@ def test_the_viewer_gets_every_body_every_frame():
     assert trace["geoms"] and len(trace["frames"]) > 100
     assert all(len(f) == 7 * trace["nbody"] for f in trace["frames"])
     assert trace["load_geoms"] == ["weight"] and trace["events"]  # the 60 lb weight tips it over
+
+
+def test_every_worked_example_gets_a_card():
+    """Each example in the skill's catalog builds, runs every test and comes back as a card."""
+    for key in examples():
+        card = assess(entry(key))
+        assert card["status"] in ("tips", "maybe", "holds"), key
+        assert set(card["risks"]) == {"child", "adult", "quake"}, key
+
+
+def test_reports_saved_before_zones_still_load():
+    old = {"width": 1.0, "depth": 0.55, "height": 1.9, "rows": 2, "cols": 1, "door_zone": 0.75, "doors": 2,
+           "shelves": 1, "hanging": True, "material": "particleboard"}  # fmt: skip
+    d = Case.from_dict(old)
+    assert len(d.drawers()) == 2 and len(d.door_list()) == 2
+    assert d.zones[1].contents == "hanging_clothes"
+
+
+def judged_entry() -> dict:
+    after_strap = {"child": "holds", "adult": "holds", "quake": "holds"}
+    return {
+        "status": "judged",
+        "piece": {"name": "floor mirror", "family": "leaning floor mirror"},
+        "judgment": {
+            "child": {"status": "tips", "says": "A child pulling the frame brings it down"},
+            "adult": {"status": "maybe", "says": "Could slide if leaned on"},
+            "quake": {"status": "tips", "says": "Falls forward when the floor shakes"},
+            "fixes": [{"title": "Clip it to the wall", "why": "Mirror clips hold the top.", "icon": "strap",
+                       "after": after_strap}],
+            "question": {"title": "Is it clipped to the wall?",
+                         "options": [{"label": "Yes", "after": after_strap},
+                                     {"label": "No", "after": {"child": "tips", "adult": "maybe", "quake": "tips"}}]},
+            "basis": "other-hazards: leaning floor mirrors",
+        },
+    }  # fmt: skip
+
+
+def test_a_judged_piece_updates_with_its_fix_and_answer():
+    card = judged_card(judged_entry())
+    assert card["status"] == "tips" and card["judged"] and card["questions"][0]["key"] == "judged"
+    assert judged_card(judged_entry(), {"fix_0": True})["status"] == "holds"
+    answered = judged_card(judged_entry(), {"judged": "Yes"})
+    assert answered["status"] == "holds" and not answered["questions"]

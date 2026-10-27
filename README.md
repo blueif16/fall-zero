@@ -2,8 +2,8 @@
 
 > View in Room tells you if it fits. Fall-Zero tells you if it falls.
 
-Phone video of a room → per-piece furniture tip-over verdict for a climbing child, an elderly person grabbing
-for support, and earthquake shaking. Built for the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026).
+Phone video of any room → a tip-over verdict for every piece of furniture or appliance in it, for a climbing
+child, an elderly person grabbing for support, and earthquake shaking. Built for the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026).
 Product spec: [docs/PRD.md](docs/PRD.md).
 
 ## Where each model fits
@@ -12,9 +12,9 @@ Product spec: [docs/PRD.md](docs/PRD.md).
 | --- | --- | --- |
 | Outline each piece and everything standing on it, all at once | SAM 3.1 (Meta Model API) | `analyze.segment_all` |
 | Fallback 3D reconstruction for pieces with no preset | SAM 3D Objects (open weights; Modal app ready, not hosted) | `modal_apps/sam3d.py`, `reconstruct.py` |
-| Identify the product, look up spec weight and recalls | Muse Spark 1.3 + web search + structured output | `meta.respond_json` |
+| Survey the room, then describe each piece for the engine (or judge it), guided by the tip-over skill | Muse Spark 1.3 + structured output | `knowledge.py`, `skill/` |
 | Chat: one-line summary above the cards, follow-ups | Muse Spark 1.3 (vision, streamed, chained by response id) | `agent.reply` |
-| Match each piece to a tunable preset, then run the scenarios | presets + statics + MuJoCo (local) | `presets.toml`, `furniture.py`, `physics.py`, `sim.py` |
+| Build each piece from its zones (drawers, doors, open shelves), then run the scenarios | statics + MuJoCo (local) | `furniture.py`, `physics.py`, `sim.py` |
 | Staged earthquake: shaking rises through four intensity levels; items on top slide and fall | MuJoCo (local) | `sim.shake` |
 | Voice entry ("is this dresser safe?") | Muse Voice Transcribe | `voice.py` |
 | Illustrations / UI assets | Muse Image | `meta.generate_image` |
@@ -65,8 +65,13 @@ src/fall_zero/
   analyze.py      photo/video -> pieces -> SAM boxes -> preset + estimate -> verdicts, fixes, videos
   assess.py       report -> cards: tips/maybe/holds per risk, re-checked fixes, questions when unsure
   agent.py        chat agent: one or two sentences above the cards, follow-up questions
-  presets.toml    furniture library the agent matches pieces to (depth, material, drawer grid...)
-  furniture.py    parametric template: panels, drawers, items on top (TV, boxes), mass, ASTM F2057 constants
+  knowledge.py    loads the skill: the prompt for each step, and answer schemas held to the catalogs
+  skill/          the tip-over skill Muse Spark reads (no furniture knowledge lives in the code):
+    SKILL.md        how to survey a room, describe a piece as zones, and judge what can't be built
+    references/     rooms, case furniture, appliances and screens, other hazards, weights, standards
+    catalog/        examples.toml (worked examples), materials.toml, contents.toml
+  furniture.py    one parametric template for every case piece: a box whose front is a stack of zones
+                  (drawers, side- or bottom-hinged doors, open shelves), contents, items on top, mass
   physics.py      tip-over statics, F2057 child tests, elderly grab, rocking threshold
   sim.py          MuJoCo model + video of a template under a scenario; the staged earthquake
   reconstruct.py  fallback for pieces with no preset: SAM mask -> SAM 3D Objects (not hosted)
@@ -85,6 +90,11 @@ docs/PRD.md
 
 `uv run fall-zero serve`, then open http://localhost:8011. Send a photo or a short video (attach, drop, or
 paste; the empty screen has two sample rooms).
+
+Any room works: a nursery, a kitchen (a range, a hutch), a living room (a TV on a console, a bookcase, a
+leaning mirror), a garage or an office. Most pieces are boxes with drawers, doors or shelves, which the engine
+builds and tests. Anything else (a leaning mirror, a floor lamp, a safe) is judged by Muse Spark from the
+skill's references and its tiles are tagged "judged" instead of "simulated".
 
 Nobody reads paragraphs, so the answer is cards. Each piece gets a verdict (can tip / might tip / stable),
 a tile per risk (climbing child, adult leaning, earthquake), question cards when the answer depends on
@@ -112,22 +122,22 @@ and deletes chats. Each upload and its
 
 ## Earthquake
 
-`sim.shake(template, anchored=False, video=..., building_hz=None)` shakes the piece against a wall with its
-drawers shut and full, in four 5-second stages at the USGS intensity levels: strong (0.15 g), very strong
+`sim.shake(template, anchored=False, video=..., building_hz=None, locks=False)` shakes the piece against a
+wall with its drawers shut and full (only their runners' friction holds them, so they can slide out; with
+`locks`, an interlock lets only one), in four 5-second stages at the USGS intensity levels: strong (0.15 g), very strong
 (0.3 g), severe (0.5 g), violent (0.8 g). The floor motion is filtered noise (Kanai-Tajimi with the
 Clough-Penzien high-pass, the textbook model of strong ground motion). `building_hz` adds the sway of the
 building, i.e. an upper floor instead of the ground. The simulation runs in the floor's frame, where shaking
 equals a sideways gravity; the video camera moves against the floor so the room is seen to shake. Things on
 top are loose bodies and fall on their own.
 
-Each card shakes the piece as it is, strapped, and with the hard things moved, in 3 simulated earthquakes
-each, all in parallel (a few seconds, cached). An upper floor is assumed until the user answers the floor
+Each card shakes the piece as it is, strapped, with drawer interlocks, and with the hard things moved, in 3
+simulated earthquakes each, all in parallel (about 3 s with the workers warm, cached). An upper floor is assumed until the user answers the floor
 question.
 
-What it shows so far: short acceleration peaks alone don't topple furniture, even at 0.8 g on the ground
-floor. On an upper floor the swaying building rocks a tall chest until it goes over. The nursery chest with
-its TV and boxes fell in 2 of 3 simulated quakes, 1 of 3 with the top cleared, and never when strapped.
-Drawers stay shut during the shaking for now; in reality they slide open and make it worse.
+What it shows so far: drawers on metal slides open by the second stage (0.3 g), the weight moves forward, and
+tall chests fall even on the ground floor (the nursery chest in 2 of 3 quakes). With drawer interlocks it
+stays up on the ground floor; strapped, it never falls. Doors stay shut during the shaking for now.
 
 ## Notes
 
@@ -138,4 +148,4 @@ Drawers stay shut during the shaking for now; in reality they slide open and mak
 - Fireworks dropped serverless Glimmer on Sept 25, 2026, so Glimmer runs on our own Modal GPU.
 - Hackathon rules: the repo must be public, and the demo must show only work built during the event.
 - Rendering under WSL waits ~65 ms per frame on the GPU copy, so videos take ~15 s each (4 render in
-  parallel). Native Linux GPUs are much faster. Verdicts and fixes print first, in ~30 s.
+  parallel). Native Linux GPUs are much faster. In the web app, cards arrive in about 14-17 s for one piece.

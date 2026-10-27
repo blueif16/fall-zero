@@ -64,6 +64,7 @@ def respond_json[T: BaseModel](
     web_search: bool = False,
     model: str | None = None,
     effort: str | None = None,
+    instructions: str | None = None,
 ) -> T:
     """Structured output, optionally grounded in live web search. Returns a validated `schema` instance."""
     kwargs: dict = {
@@ -71,6 +72,8 @@ def respond_json[T: BaseModel](
     }
     if web_search:
         kwargs["tools"] = [{"type": "web_search"}]
+    if instructions:
+        kwargs["instructions"] = instructions
     resp = respond(prompt, images=images, model=model, effort=effort, **kwargs)
     return schema.model_validate_json(final_text(resp))
 

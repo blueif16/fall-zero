@@ -3,14 +3,14 @@
 from dataclasses import replace
 
 from fall_zero.analyze import separate
-from fall_zero.furniture import Dresser, TopItem
+from fall_zero.furniture import Case, TopItem, Zone
 from fall_zero.physics import rocking_threshold_g
 from fall_zero.sim import STAGES, ground_motion, shake
 
 TV = TopItem("TV", "tv", mass=3.5, width=0.62, depth=0.22, height=0.40, x=-0.14)
 BOXES = TopItem("boxes", "box", mass=3.0, width=0.32, depth=0.35, height=0.34, x=0.26)
 # The nursery sample: a tall particleboard chest with a TV and boxes on top
-NURSERY = Dresser(0.90, 0.48, 1.20, rows=6, top_items=tuple(separate(Dresser(0.90, 0.48, 1.20), [TV, BOXES])))
+NURSERY = Case(0.90, 0.48, 1.20, zones=(Zone(rows=6),), top_items=tuple(separate(Case(0.90, 0.48, 1.20), [TV, BOXES])))
 
 
 def test_items_on_top_never_overlap():
@@ -39,3 +39,14 @@ def test_upper_floor_quake_topples_the_loaded_chest_but_not_when_strapped():
     runs = [shake(NURSERY, seed=s, building_hz=1.5) for s in (1, 2, 3)]
     assert any(r.fell_at for r in runs)
     assert not any(shake(NURSERY, anchored=True, seed=s, building_hz=1.5).fell_at for s in (1, 2, 3))
+
+
+def test_drawers_slide_out_and_topple_the_chest_unless_interlocked():
+    """On the ground floor the shut drawers slide out on their rollers and the chest falls in at least
+    one of three simulated earthquakes; with interlocks at most one drawer opens and it stays up."""
+    runs = [shake(NURSERY, seed=s) for s in (1, 2, 3)]
+    assert all(r.drawers_out_at for r in runs)
+    assert any(r.fell_at for r in runs)
+    locked = [shake(NURSERY, seed=s, locks=True) for s in (1, 2, 3)]
+    assert all(sum(len(st["drawers_out"]) for st in r.stages) <= 1 for r in locked)
+    assert not any(r.fell_at for r in locked)

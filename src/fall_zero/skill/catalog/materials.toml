@@ -1,0 +1,46 @@
+# Panel materials the engine knows. Add one here and the model can pick it.
+# density: kg/m^3 of the carcass, door and drawer-front panels. panel/back: thickness in m.
+# drawer_box/drawer_bottom: drawer side and bottom thickness in m. Values are typical, not measured;
+# when a product's weight is known, the engine scales the panels to match it.
+
+[particleboard]
+label = "particleboard or chipboard, usually laminated or foiled (most flat-pack furniture)"
+density = 650
+panel = 0.016
+back = 0.003
+
+[mdf]
+label = "MDF, painted or foiled (kids' furniture, painted dressers)"
+density = 750
+panel = 0.018
+back = 0.003
+
+[plywood]
+label = "plywood"
+density = 550
+panel = 0.018
+back = 0.006
+back_density = 600
+
+[solid_softwood]
+label = "solid pine or other softwood"
+density = 500
+panel = 0.020
+back = 0.006
+back_density = 600
+
+[solid_hardwood]
+label = "solid oak, maple, walnut or other hardwood"
+density = 720
+panel = 0.020
+back = 0.006
+back_density = 600
+
+[steel]
+label = "sheet steel (filing cabinets, tool chests, lockers, metal shelving, appliance bodies)"
+density = 7850
+panel = 0.0008
+back = 0.0006
+back_density = 7850
+drawer_box = 0.0007
+drawer_bottom = 0.0007
