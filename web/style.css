@@ -314,6 +314,57 @@ main {
 .gs.maybe, .p-tab.maybe, .ptile.maybe, .outcome.maybe { --rb: var(--maybe-bg); --rc: var(--maybe); }
 .gs.holds, .p-tab.holds, .ptile.holds, .outcome.holds { --rb: var(--holds-bg); --rc: var(--holds); }
 
+/* the steps of a check, ticked up to where this room is, and the one thing to do next */
+.flowbar { display: flex; flex-direction: column; gap: 10px; container-type: inline-size; }
+.track { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; gap: 0; }
+.track li { display: flex; align-items: center; flex: 1 1 0; min-width: 0; color: var(--muted); }
+.track li:first-child { flex: none; }
+.track li + li::before { content: ""; flex: 1 1 8px; min-width: 8px; height: 2px; margin: 0 6px; background: var(--soft-2); border-radius: 1px; }
+.track li.done + li::before, .track li.done + li.now::before { background: var(--holds); opacity: .5; }
+.track li > * { display: flex; align-items: center; gap: 6px; flex: none; border: 0; background: none; padding: 0; color: inherit; font: inherit; min-width: 0; }
+.track li > button { cursor: pointer; border-radius: 999px; }
+.track li > button:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.track i {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; flex: none; font-style: normal;
+  font-size: 11.5px; font-weight: 700; background: var(--soft-2); color: var(--muted); transition: background .3s, color .3s;
+}
+.track i svg { width: 12px; height: 12px; stroke-width: 3; }
+.track b { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.track li.done { color: var(--holds); }
+.track li.done i { background: var(--holds-bg); color: var(--holds); }
+.track li.now { color: var(--fg); }
+.track li.now i { background: var(--accent); color: #fff; box-shadow: 0 0 0 3px #e3ecfe; }
+.track li.now b { font-weight: 700; }
+@container (max-width: 520px) {
+  .track li:not(.now) b { display: none; } /* narrow: only where the room is gets its name */
+}
+.next {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid #bcd0fb; background: #f5f8ff;
+  border-radius: 16px; padding: 9px 12px 9px 9px; color: var(--fg); font-size: 15px; font-weight: 600; line-height: 1.3;
+  transition: background .2s, transform .15s var(--ease), box-shadow .2s;
+}
+.next:hover { background: #eaf1ff; transform: translateY(-1px); box-shadow: 0 6px 16px -10px var(--accent); }
+.next .ni { width: 32px; height: 32px; border-radius: 10px; background: #fff; color: var(--accent); display: grid; place-items: center; flex: none; }
+.next .ni svg { width: 19px; height: 19px; }
+.next .nt { flex: 1; min-width: 0; }
+.next .who { margin-left: auto; }
+.next::after { content: "›"; font-size: 20px; color: var(--accent); margin: -2px 2px 0 2px; }
+.next.safe { border-color: #bfe5cc; background: var(--holds-bg); }
+.next.safe .ni { color: var(--holds); }
+.next.safe::after { color: var(--holds); }
+.next.sure { border-color: #f3dfb3; background: var(--maybe-bg); }
+.next.sure .ni { color: var(--maybe); }
+.next.sure::after { color: var(--maybe); }
+.asked {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; border: 1px dashed #e7c98a; background: none;
+  border-radius: 999px; padding: 5px 8px 5px 10px; font-size: 13.5px; font-weight: 600; color: var(--maybe);
+}
+.asked svg { width: 16px; height: 16px; }
+.asked i { font-style: normal; min-width: 20px; height: 20px; border-radius: 999px; background: var(--maybe-bg); display: grid; place-items: center; font-size: 12px; padding: 0 5px; }
+.asked:hover { border-style: solid; }
+.q.flash { animation: flash 1.2s var(--ease); }
+@keyframes flash { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 30% { box-shadow: 0 0 0 4px #f3dfb3; } }
+
 .block { margin-top: 16px; transition: opacity .2s; }
 .block h4 { margin: 0 0 8px; font-size: 12.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .block h4 svg { width: 16px; height: 16px; }

@@ -106,3 +106,62 @@ export function bestScenario(g) {
   const best = KEYS.reduce((a, b) => (gain(b) > gain(a) ? b : a));
   return gain(best) > 0 ? best : null;
 }
+
+// --- where the room is in the flow, and the one thing to do next ---------------------------------
+
+// The steps of a check, in order. "find" is done once the verdicts are in; the rest follow from the cards.
+export const STEPS = ["find", "sure", "plan", "fix", "check", "safe"];
+
+// The fixes still to do that would make a piece safer, in the to-do order
+const toDo = (room) => todo(room).filter((g) => g.act && !g.done && g.lift > 0);
+
+// The fixes that count toward "n of m done": done ones that changed the physics, and the ones still to do
+const counted = (room) => todo(room).filter((g) => g.act && (g.done ? g.members.some((m) => m.f.after) : g.lift > 0));
+
+const atRisk = (room) => Object.values(roomNow(room)).some((s) => s !== "holds");
+
+// Being sure while a question is open (assess.py asks only what could change a verdict), then the plan
+// while a fix would make a piece safer, else safe. Fixing and checking are where the person has taken it.
+export function stepOf(room) {
+  if (!room.pieces.length) return null;
+  if (room.checking) return "check";
+  if (room.fixing) return "fix";
+  if (!room.skipAsks && askGroups(room).length) return "sure";
+  return toDo(room).length ? "plan" : "safe";
+}
+
+// What the room becomes with a fix done: everything holds, or how many of its pieces do
+function outcome(room, g) {
+  if (KEYS.every((k) => roomWith(room, k, g) === "holds")) return "then everything here holds";
+  const hold = room.pieces.filter((p) => KEYS.every((k) => statusWith(p, k, g) === "holds")).length;
+  return hold ? `then ${hold} of ${room.pieces.length} hold` : "";
+}
+const numbers = (members) => [...new Set(members.map((m) => (m.p ?? m).n))];
+
+// The one line the room card leads with: what to do next, never at odds with the card below it
+export function nextLine(room) {
+  const step = stepOf(room);
+  if (step === "sure") { // the questions are right below: say how many, not which
+    const asks = askGroups(room);
+    const n = asks.length;
+    return { step, text: `Next: ${n === 1 ? "one quick answer" : `${n} quick answers`} make this sure`,
+      pieces: numbers(asks.flatMap((a) => a.members)), key: asks[0].key };
+  }
+  if (step === "plan" || step === "fix" || step === "check") {
+    const groups = counted(room);
+    const g = (step === "plan" ? null : groups.find((x) => x.key === (room.checking || room.fixing))) || toDo(room)[0];
+    const done = groups.filter((x) => x.done).length;
+    const so_far = done ? `${done} of ${groups.length} done. ` : "";
+    const what = step === "check" ? `check that ${fixTitle(g.f).toLowerCase()} holds` : g.title;
+    const then = step === "plan" ? outcome(room, g) : "";
+    const extra = then ? `, ${then}` : "";
+    return { step, text: `${so_far}Next: ${what}${extra}`, pieces: numbers(g.members), key: g.key };
+  }
+  if (step === "safe") {
+    const text = atRisk(room)
+      ? "Nothing I can test would make this safer. Ask me about it, or check another room."
+      : "Everything here holds. Next: check another room.";
+    return { step, text, pieces: [] };
+  }
+  return { step: null, text: "", pieces: [] };
+}

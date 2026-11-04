@@ -13,7 +13,7 @@
 
 import {
   RISKS, WORD, garbled, clip, tidy, itemName, pieceName, fixTitle, RANK, KEYS, worstOf, cap1,
-  fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario,
+  fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine,
 } from "./flow.js";
 
 const $ = (id) => document.getElementById(id);
@@ -677,6 +677,46 @@ function habitChip(room, g, i, enter) {
   return `<button type="button" class="habit${e.cls}"${e.style} data-g="${i}" title="How">${fixIcon(g.f)}<span>${esc(g.title)}</span>${who}</button>`;
 }
 
+// --- where the room is: the steps of a check, and the one thing to do next ------------------------
+
+const TRACK = [["find", "What can fall"], ["sure", "Be sure"], ["plan", "Plan"], ["fix", "Fix"], ["check", "Check"]];
+
+// The steps, ticked up to the room's own (all of them once it's safe), and the "Next:" line under them.
+// "Be sure" and "Plan" can be tapped to go back to the questions or past them.
+function trackHTML(room, step, asks) {
+  const at = STEPS.indexOf(step);
+  const steps = TRACK.map(([key, label], i) => {
+    const state = i < at ? "done" : i === at ? "now" : "";
+    const tap = (key === "sure" && asks.length && step !== "sure") || (key === "plan" && step === "sure");
+    const inner = `<i>${state === "done" ? ICON.holds : i + 1}</i><b>${label}</b>`;
+    return `<li class="${state}">${tap ? `<button type="button" data-step="${key}">${inner}</button>` : `<span>${inner}</span>`}</li>`;
+  }).join("");
+  const next = nextLine(room);
+  const g = next.key && room.groups.find((x) => x.key === next.key);
+  const icon = step === "sure" ? ICON.ask : step === "safe" ? (next.text.startsWith("Everything") ? ICON.holds : ICON.ask) : g ? fixIcon(g.f) : ICON.wrench;
+  const who = room.pieces.length > 1 && next.pieces.length ? `<span class="who">${badges(next.pieces.map((n) => room.pieces.find((p) => p.n === n)))}</span>` : "";
+  return `<div class="flowbar"><ol class="track" aria-label="Steps">${steps}</ol>
+    ${next.text ? `<button class="next ${step}" type="button"><span class="ni">${icon}</span><span class="nt">${esc(next.text)}</span>${who}</button>` : ""}</div>`;
+}
+
+// The "Next:" line does what it says: shows the question, previews the fix, or opens a new photo
+function goNext(room) {
+  const next = nextLine(room);
+  if (next.step === "sure") {
+    const q = room.el.querySelector(".q");
+    q?.scrollIntoView({ block: "center", behavior: calm.matches ? "auto" : "smooth" });
+    q?.classList.remove("flash");
+    void q?.offsetWidth; // restart the animation
+    q?.classList.add("flash");
+  } else if (next.step === "plan") {
+    const g = room.groups.find((x) => x.key === next.key);
+    if (g) showFix(room, g);
+  } else if (next.step === "safe") {
+    if (next.text.startsWith("Everything")) els.file.click();
+    else els.text.focus();
+  }
+}
+
 function renderCard(room) {
   const ps = room.pieces;
   const head = roomHeadline(room);
@@ -696,13 +736,18 @@ function renderCard(room) {
   room.asks = asks;
   room.groups = groups;
 
+  const step = stepOf(room);
+  const asking = asks.length && step === "sure";
+  const folded = asks.length && !asking
+    ? `<button class="asked" type="button" data-step="sure">${ICON.ask}<span>Help me be sure</span><i>${asks.length}</i></button>` : "";
+
   room.el.className = `card choices ${head.status}${pnl.room === room ? " open" : ""}${room.pending ? " busy" : ""}`;
-  room.el.innerHTML = `${glanceHTML(room, head)}
-    ${asks.length ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
+  room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}
+    ${asking ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
     ${acts.length ? `<section class="block"><h4>${ICON.wrench}${head.status === "holds" ? "Keep it that way" : "Do these first"}</h4>
       <div class="todo">${rows}</div></section>` : ""}
     ${habits.length ? `<section class="block"><h4>${ICON.hand}Good habits</h4>${chips}</section>` : ""}
-    ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${notes}`;
+    ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${folded}${notes}`;
   enter.done();
   if (popped) room.el.querySelector(".gv")?.classList.add("pop");
   ps.forEach((p) => p.marker && (p.marker.style.color = `var(--${p.card.status})`));
@@ -712,6 +757,12 @@ function renderCard(room) {
 
 function bindCard(room) {
   const el = room.el;
+  el.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
+    room.skipAsks = b.dataset.step === "plan";
+    renderCard(room);
+    if (!room.skipAsks) goNext(room);
+  }));
+  el.querySelector(".next")?.addEventListener("click", () => goNext(room));
   el.querySelector(".gv").onclick = () => openPanel(room);
   el.querySelectorAll(".gs").forEach((b) => (b.onclick = () => openPanel(room, { scenario: b.dataset.k })));
   el.querySelectorAll("[data-a]").forEach((qEl) => {
