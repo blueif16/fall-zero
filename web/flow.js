@@ -162,11 +162,13 @@ export function planOutcome(room) {
 
 // --- fixing: the stuck options of a row, and the message for whoever else has to say yes or do it -----
 
-// "I'm stuck" offers its fix kind's options (fixes.toml `stuck`), once each however many pieces share it
-export function stuckOptions(g) {
+// "I'm stuck" offers its fix kind's options (fixes.toml `stuck`, most common first), once each however many
+// pieces share it; after a failed check, the ones about it moving lead
+export function stuckOptions(g, afterCheck = false) {
   const seen = new Map();
   for (const m of g.members) for (const o of m.f.how?.stuck || []) if (!seen.has(o.key)) seen.set(o.key, o);
-  return [...seen.values()];
+  const all = [...seen.values()];
+  return afterCheck ? [...all.filter((o) => o.moved), ...all.filter((o) => !o.moved)] : all;
 }
 
 const listed = (names) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);

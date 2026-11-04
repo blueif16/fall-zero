@@ -27,6 +27,7 @@ from fall_zero import agent, meta, room, store, voice
 from fall_zero.analyze import VIDEO_SUFFIXES, analyze
 from fall_zero.assess import CARD_STATUSES, assess_all, card, trajectory, warm
 from fall_zero.clients import NotConfigured, chat, providers
+from fall_zero.furniture import catalog
 
 ROOT = store.ROOT
 # Each analyzed upload is a run: web/<run>/ holds the photo, still.jpg and report.json; saved chats are
@@ -52,6 +53,12 @@ async def not_configured(_, exc: NotConfigured) -> JSONResponse:
 def health() -> dict[str, bool]:
     """Which providers have credentials in .env."""
     return {name: p.configured for name, p in providers().items()}
+
+
+@app.get("/api/handoffs")
+def handoffs() -> dict:
+    """The messages for when someone else has to say yes or do the work (skill/catalog/handoffs.toml)."""
+    return catalog("handoffs")
 
 
 class ChatIn(BaseModel):

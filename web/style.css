@@ -402,6 +402,60 @@ main {
 .plan-end.holds { background: var(--holds-bg); color: var(--holds); }
 .plan-end.tips { background: var(--tips-bg); color: var(--tips); }
 
+/* fixing one fix, step by step, and checking it; what to do when stuck; handing it to someone */
+.fixing, .checking { display: flex; flex-direction: column; gap: 10px; }
+.fhead { display: flex; align-items: center; gap: 10px; }
+.fhead .ficon { width: 38px; height: 38px; border-radius: 12px; background: #e3ecfe; color: var(--accent); display: grid; place-items: center; flex: none; }
+.fhead .ficon svg { width: 21px; height: 21px; }
+.checking .fhead .ficon { background: var(--holds-bg); color: var(--holds); }
+.fhead .fh { display: flex; flex-direction: column; min-width: 0; }
+.fhead .fh small { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.fhead .fh b { font-size: 17px; line-height: 1.2; letter-spacing: -.01em; }
+.fhead .fback { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--soft); display: grid; place-items: center; color: var(--muted); flex: none; }
+.fhead .fback svg { width: 16px; height: 16px; }
+.fhead .fback:hover { background: var(--soft-2); color: var(--fg); }
+.fhead .who { margin-left: 4px; }
+.fsteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fsteps li { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; border: 1px solid var(--line); border-radius: 14px; font-size: 14.5px; line-height: 1.35; color: var(--muted); transition: all .25s; }
+.fsteps .sn { width: 22px; height: 22px; border-radius: 50%; background: var(--soft-2); color: var(--muted); font-size: 12px; font-weight: 700; display: grid; place-items: center; flex: none; }
+.fsteps .sn svg { width: 12px; height: 12px; stroke-width: 3; }
+.fsteps li.done { border-color: #bfe5cc; background: var(--holds-bg); color: var(--holds); }
+.fsteps li.done .sn { background: #fff; color: var(--holds); }
+.fsteps li.now { border-color: var(--accent); box-shadow: 0 0 0 3px #e3ecfe; color: var(--fg); font-weight: 600; font-size: 15.5px; }
+.fsteps li.now .sn { background: var(--accent); color: #fff; }
+.fnav { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.fnav button { border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 8px 14px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.fnav button.go, .ssay .go { border: 0; background: var(--fg); color: #fff; }
+.fnav button svg, .ssay .go svg { width: 16px; height: 16px; stroke-width: 2.4; }
+.stuck-btn {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; border: 1px dashed #e7c98a; background: none;
+  border-radius: 999px; padding: 6px 12px 6px 10px; font-size: 14px; font-weight: 600; color: var(--maybe);
+}
+.stuck-btn svg { width: 16px; height: 16px; }
+.stuck-btn.on, .stuck-btn:hover { border-style: solid; background: var(--maybe-bg); }
+.stuck { display: flex; flex-direction: column; gap: 10px; }
+.schips { display: flex; flex-wrap: wrap; gap: 6px; }
+.schip { border: 1px solid #f3dfb3; background: var(--maybe-bg); border-radius: 999px; padding: 5px 12px; font-size: 13.5px; font-weight: 600; color: #6b4a12; }
+.schip:hover { border-color: var(--maybe); }
+.schip.on { background: var(--maybe); border-color: var(--maybe); color: #fff; }
+.ssay { border-left: 3px solid var(--maybe); padding: 2px 0 2px 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.ssay p { margin: 0; font-size: 14.5px; line-height: 1.45; }
+.ssay .go { border-radius: 12px; padding: 8px 14px; font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.ssay .src, .handoff small { font-size: 11.5px; color: #9a9aa4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.handoff { border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: var(--soft); }
+.handoff small { white-space: normal; color: var(--muted); font-size: 13px; }
+.hmsg { margin: 4px 0; white-space: pre-wrap; font: inherit; font-size: 14px; line-height: 1.45; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; max-height: 220px; overflow: auto; }
+.cask { margin: 0; font-size: 17px; font-weight: 650; line-height: 1.3; }
+.opts.check { gap: 8px; }
+.opts.check button { flex-direction: row; align-items: center; gap: 7px; padding: 10px 14px; font-size: 15px; border-radius: 14px; }
+.opts.check button svg { width: 18px; height: 18px; stroke-width: 2.4; }
+.opts.check [data-check="holds"] { border-color: #bfe5cc; background: var(--holds-bg); color: var(--holds); }
+.opts.check [data-check="moved"] { border-color: #f6c9c9; background: var(--tips-bg); color: var(--tips); }
+.fix-btn { border-radius: 12px; padding: 6px 12px; font-size: 13.5px; font-weight: 600; white-space: nowrap; border: 0; background: var(--fg); color: #fff; }
+.fix-btn:hover { background: #33333b; }
+.trow.handed { background: var(--soft); }
+.tchip.checked { background: #fff; color: var(--holds); }
+
 /* the to-do list: one row per fix */
 .todo { display: flex; flex-direction: column; gap: 6px; container-type: inline-size; }
 .trow {

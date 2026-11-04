@@ -239,3 +239,10 @@ test("'before' shows each piece as it was saved just before the fix was checked"
   assert.equal(statusWith(r.pieces[0], "adult", was), "maybe");
   assert.equal(statusWith(r.pieces[0], "adult", null), "holds");
 });
+
+test("after a failed check, the stuck options about it moving come first", () => {
+  const stuck = [{ key: "renting", label: "I rent", say: "", then: "" }, { key: "wont_stay", label: "It still moves", say: "", then: "", moved: true }];
+  const g = fixGroups(room(card({ fixes: [{ ...strapN(ALL("holds")), how: { stuck } }] })))[0];
+  assert.deepEqual(stuckOptions(g).map((o) => o.key), ["renting", "wont_stay"]);
+  assert.deepEqual(stuckOptions(g, true).map((o) => o.key), ["wont_stay", "renting"]);
+});
