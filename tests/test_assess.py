@@ -243,3 +243,17 @@ def test_every_stuck_option_leads_to_a_fix_or_a_handoff_that_exists():
             assert o["label"] and len(o["label"]) <= 36 and o["say"] and o["source"], (kind, o["key"])
     for name, h in handoffs.items():
         assert h["template"].format(pieces="1", fixes="2", room="3"), name  # only these three to fill
+
+
+def test_every_question_says_which_scenarios_it_can_change():
+    """So a home without, say, earthquakes isn't asked which floor the room is on."""
+    seen = {}
+    for key, answers in [("chest_tall_6", {}), ("chest_tall_6", {"anchored": "no"}), ("ikea_billy_80", {})]:
+        for q in assess(entry(key, depth_is_guess=True), answers, simulate_quakes=True)["questions"]:
+            seen[q["key"]] = q["about"]
+    assert seen, "no questions to check"
+    assert all(set(about) <= {"child", "adult", "quake"} and about for about in seen.values()), seen
+    if "floor" in seen:
+        assert seen["floor"] == ["quake"]
+    judged = judged_card(judged_entry())["questions"]
+    assert all(q["about"] for q in judged)

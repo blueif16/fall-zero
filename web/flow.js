@@ -111,8 +111,10 @@ export function todo(room) {
 // The same question on several pieces (same words, same answers) is asked once
 export function askGroups(room) {
   const groups = new Map();
+  const ks = keysFor(room);
   for (const p of room.pieces) {
     for (const q of p.card.questions) {
+      if (q.about && !q.about.some((k) => ks.includes(k))) continue; // about nothing this home has
       const key = q.kind === "measure" ? `${p.n}:${q.key}` : JSON.stringify([q.key, q.title, q.options]);
       if (!groups.has(key)) groups.set(key, { key, q, members: [] });
       groups.get(key).members.push(p);

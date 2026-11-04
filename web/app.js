@@ -14,7 +14,7 @@
 import {
   RISKS, WORD, garbled, clip, tidy, itemName, pieceName, fixTitle, RANK, KEYS, worstOf, cap1,
   fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine, costText, timeText,
-  shoppingList, planOutcome, rowHow, stuckOptions, handoffText,
+  shoppingList, planOutcome, rowHow, stuckOptions, handoffText, weightsFor, keysFor, statusOf,
 } from "./flow.js";
 
 const $ = (id) => document.getElementById(id);
@@ -83,8 +83,8 @@ function setStatus(text, tone) {
 function summarizeStatus() {
   if (!pieces.length) return setStatus(previousId ? "Ready" : "Send a photo to start", "idle");
   const questions = pieces.reduce((n, p) => n + p.card.questions.length, 0);
-  const tips = pieces.filter((p) => p.card.status === "tips").length;
-  const maybe = pieces.filter((p) => p.card.status === "maybe").length;
+  const tips = pieces.filter((p) => statusOf(p, p.room) === "tips").length;
+  const maybe = pieces.filter((p) => statusOf(p, p.room) === "maybe").length;
   const parts = [];
   if (tips) parts.push(tips > 1 ? `${tips} can tip` : "Can tip");
   else if (maybe) parts.push(maybe > 1 ? `${maybe} might tip` : "Might tip");
@@ -620,7 +620,7 @@ function stillFigure(ev) {
 
 // --- shared pieces of the cards ------------------------------------------------------------------
 
-const pn = (p, s = p.card.status) => `<span class="pn ${s}">${p.n}</span>`;
+const pn = (p, s = statusOf(p, p.room)) => `<span class="pn ${s}">${p.n}</span>`;
 const badges = (ps) => [...new Set(ps)].map((p) => pn(p)).join("");
 const HAZARD_ORDER = { danger: 0, caution: 1, fine: 2 };
 const byHazard = (a, b) => (HAZARD_ORDER[a.level] ?? 2) - (HAZARD_ORDER[b.level] ?? 2);
@@ -640,11 +640,15 @@ function enterer(room) {
   return enter;
 }
 
+// A piece's verdict in words: the card's own when it counts every scenario, else for this home's
+const VERDICT_WORDS = { tips: "Can tip over", maybe: "Might tip over", holds: "Stable" };
+const verdictOf = (p, room) => (statusOf(p, room) === p.card.status ? p.card.headline : VERDICT_WORDS[statusOf(p, room)]);
+
 function roomHeadline(room) {
   const ps = room.pieces;
-  if (ps.length === 1) return { status: ps[0].card.status, headline: ps[0].card.headline, name: esc(pieceName(ps[0].card)) };
-  const status = worstOf(ps.map((p) => p.card.status));
-  const count = (s) => ps.filter((p) => p.card.status === s).length;
+  if (ps.length === 1) return { status: statusOf(ps[0], room), headline: verdictOf(ps[0], room), name: esc(pieceName(ps[0].card)) };
+  const status = worstOf(ps.map((p) => statusOf(p, room)));
+  const count = (s) => ps.filter((p) => statusOf(p, room) === s).length;
   const headline = status === "holds" ? "Everything here is stable"
     : [[count("tips"), "can tip"], [count("maybe"), "might tip"]].filter(([n]) => n).map(([n, w]) => `${n} ${w}`).join(", ");
   const where = room.ev.report.room ? `This ${esc(clip(room.ev.report.room, 24))}` : "This room";
@@ -655,11 +659,14 @@ function roomHeadline(room) {
 
 const TODO_SHOWN = 4, ASKS_SHOWN = 2; // longer lists fold the rest behind "N more"
 
+const weightClass = (room, k) => (!keysFor(room).includes(k) ? " off" : room.weights?.[k] === "later" ? " later" : "");
+const weightNote = (room, k) => (!keysFor(room).includes(k) ? " (not for your home)" : room.weights?.[k] === "later" ? " (soon)" : "");
+
 function glanceHTML(room, head) {
   const now = roomNow(room);
   return `<div class="glance"><div class="gin">
     <button class="gv" type="button" title="See it happen">${ICON[head.status]}<span><small>${head.name}</small><b>${esc(head.headline)}</b></span></button>
-    <div class="gk">${RISKS.map(([k, label]) => `<button class="gs ${now[k]}" type="button" data-k="${k}" title="${label}: ${WORD[now[k]]}">
+    <div class="gk">${RISKS.map(([k, label]) => `<button class="gs ${now[k]}${weightClass(room, k)}" type="button" data-k="${k}" title="${label}: ${WORD[now[k]]}${weightNote(room, k)}">
       ${ICON[k]}<i>${ICON[now[k]]}</i></button>`).join("")}</div></div></div>`;
 }
 
@@ -730,6 +737,61 @@ function habitChip(room, g, i, enter) {
   return `<button type="button" class="habit${e.cls}"${e.style} data-g="${i}" title="How">${fixIcon(g.f)}<span>${esc(g.title)}</span>${who}</button>`;
 }
 
+// --- who's home: asked once for the home, kept in this browser -------------------------------------
+
+let HOUSEHOLD = {}; // skill/catalog/household.toml: the questions, their options, what each changes
+const QUESTIONS = ["child", "older", "quake", "rent"];
+const home = (() => {
+  try {
+    return JSON.parse(localStorage.home || "{}");
+  } catch {
+    return {}; // storage blocked: this visit only
+  }
+})();
+const saveHome = () => {
+  try {
+    localStorage.home = JSON.stringify(home);
+  } catch {}
+};
+const rooms = () => [...new Set(pieces.map((p) => p.room))];
+fetch("/api/catalog/household").then((r) => r.json()).then((h) => {
+  HOUSEHOLD = h;
+  rooms().forEach(renderCard);
+  if (pnl.room) renderPanel();
+}).catch(() => {});
+
+// Only confirmed answers change the verdicts; until then the photo's guess just picks the chips
+function applyHome(room) {
+  room.weights = home.confirmed ? weightsFor(Object.fromEntries(QUESTIONS.map((q) => [q, home[q]])), HOUSEHOLD) : null;
+  room.askHome = Object.keys(HOUSEHOLD).length > 0 && (!home.confirmed || !!room.reviewHome);
+}
+const guessed = (room, q) => home[q] ?? (room.ev.report.household?.[q] !== "unknown" ? room.ev.report.household?.[q] : undefined);
+
+function homeHTML(room) {
+  const rows = QUESTIONS.filter((q) => HOUSEHOLD[q]).map((q) => `<div class="homerow"><span>${esc(HOUSEHOLD[q].ask)}</span>
+    <div class="opts">${HOUSEHOLD[q].options.map((o) => `<button type="button" class="${guessed(room, q) === o.key ? "picked" : ""}" data-home="${q}" data-v="${esc(o.key)}">${esc(o.label)}</button>`).join("")}</div></div>`).join("");
+  const from = !home.confirmed && room.ev.report.people ? `<div class="qh">From the photo: ${esc(clip(room.ev.report.people, 80))}</div>` : "";
+  return `<div class="q home"><div class="qt">${ICON.room}<span>Who's home?</span></div>${from}${rows}
+    <button class="go" type="button" data-home-ok>${ICON.holds}That's us</button></div>`;
+}
+
+function bindHome(room) {
+  room.el.querySelectorAll("[data-home]").forEach((b) => (b.onclick = () => {
+    home[b.dataset.home] = b.dataset.v;
+    saveHome();
+    renderCard(room);
+  }));
+  room.el.querySelector("[data-home-ok]")?.addEventListener("click", () => {
+    QUESTIONS.forEach((q) => (home[q] = guessed(room, q))); // what the photo guessed, as shown
+    home.confirmed = true;
+    saveHome();
+    rooms().forEach((r) => (r.reviewHome = false));
+    rooms().forEach(renderCard); // every room in the chat is this home
+    if (pnl.room) renderPanel();
+    summarizeStatus();
+  });
+}
+
 // --- where the room is: the steps of a check, and the one thing to do next ------------------------
 
 const TRACK = [["find", "What can fall"], ["sure", "Be sure"], ["plan", "Plan"], ["fix", "Fix"], ["check", "Check"]];
@@ -740,7 +802,7 @@ function trackHTML(room, step, asks) {
   const at = STEPS.indexOf(step);
   const steps = TRACK.map(([key, label], i) => {
     const state = i < at ? "done" : i === at ? "now" : "";
-    const tap = (key === "sure" && asks.length && step !== "sure") || (key === "plan" && step !== "plan" && step !== "safe");
+    const tap = (key === "sure" && step !== "sure") || (key === "plan" && step !== "plan" && step !== "safe");
     const inner = `<i>${state === "done" ? ICON.holds : i + 1}</i><b>${label}</b>`;
     return `<li class="${state}">${tap ? `<button type="button" data-step="${key}">${inner}</button>` : `<span>${inner}</span>`}</li>`;
   }).join("");
@@ -796,7 +858,9 @@ function fixHTML(room, g) {
   const nav = `${i > 0 ? `<button type="button" data-act="prev">Back</button>` : ""}
     ${i < steps.length - 1 ? `<button class="go" type="button" data-act="next">Next step</button>` : `<button class="go" type="button" data-act="check">${ICON.holds}Done, check it</button>`}`;
   return `<section class="block fixing">${cardHead(room, g, "Fix it", fixIcon(g.f))}
-    ${chips ? `<div class="hchips">${chips}</div>` : ""}<ol class="fsteps">${list}</ol><div class="fnav">${nav}</div>
+    ${chips ? `<div class="hchips">${chips}</div>` : ""}
+    ${home.confirmed && home.rent === "rent" && how.renter ? `<p class="hl renter">${ICON.room}<span>${esc(clip(how.renter, 240))}</span></p>` : ""}
+    <ol class="fsteps">${list}</ol><div class="fnav">${nav}</div>
     ${how.avoid ? `<p class="hl avoid">${ICON.tips}<span>${esc(clip(how.avoid, 200))}</span></p>` : ""}
     ${stuckOptions(g).length ? `<button class="stuck-btn${room.stuckOpen ? " on" : ""}" type="button" data-act="stuck">${ICON.ask}I'm stuck</button>` : ""}
     ${room.stuckOpen ? stuckHTML(room, g) : ""}</section>`;
@@ -918,6 +982,7 @@ function handedHTML(room, groups, enter) {
 }
 
 function renderCard(room) {
+  applyHome(room);
   const ps = room.pieces;
   const head = roomHeadline(room);
   const enter = enterer(room);
@@ -938,9 +1003,10 @@ function renderCard(room) {
   room.groups = groups;
 
   const step = stepOf(room);
-  const asking = asks.length && step === "sure";
-  const folded = asks.length && !asking
-    ? `<button class="asked" type="button" data-step="sure">${ICON.ask}<span>Help me be sure</span><i>${asks.length}</i></button>` : "";
+  const nAsk = asks.length + (room.askHome ? 1 : 0);
+  const asking = nAsk && step === "sure";
+  const folded = nAsk && !asking
+    ? `<button class="asked" type="button" data-step="sure">${ICON.ask}<span>Help me be sure</span><i>${nAsk}</i></button>` : "";
 
   room.el.className = `card choices ${head.status}${pnl.room === room ? " open" : ""}${room.pending ? " busy" : ""}`;
   const doing = (step === "fix" || step === "check") && groups.find((g) => g.key === (step === "fix" ? room.fixing : room.checking));
@@ -954,7 +1020,7 @@ function renderCard(room) {
     return;
   }
   room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}
-    ${asking ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
+    ${asking ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${room.askHome ? homeHTML(room) : ""}${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
     ${acts.length ? `<section class="block"><h4>${ICON.wrench}${head.status === "holds" ? "Keep it that way" : "Do these first"}</h4>
       ${shopHTML(room)}<div class="todo">${rows}</div>${planEndHTML(room, acts)}</section>` : ""}
     ${handedHTML(room, handed, enter)}
@@ -962,7 +1028,7 @@ function renderCard(room) {
     ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${folded}${notes}`;
   enter.done();
   if (popped) room.el.querySelector(".gv")?.classList.add("pop");
-  ps.forEach((p) => p.marker && (p.marker.style.color = `var(--${p.card.status})`));
+  ps.forEach((p) => p.marker && (p.marker.style.color = `var(--${statusOf(p, room)})`));
   bindCard(room);
   markOpen();
 }
@@ -971,12 +1037,14 @@ function bindCard(room) {
   const el = room.el;
   el.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
     room.skipAsks = b.dataset.step === "plan";
+    room.reviewHome = b.dataset.step === "sure" && !askGroups(room).length; // nothing else to ask: who's home again
     resetFix(room);
     room.fixing = room.checking = null;
     renderCard(room);
     if (!room.skipAsks) goNext(room);
   }));
   el.querySelector(".next")?.addEventListener("click", () => goNext(room));
+  bindHome(room);
   el.querySelector(".gv").onclick = () => openPanel(room);
   el.querySelectorAll(".gs").forEach((b) => (b.onclick = () => openPanel(room, { scenario: b.dataset.k })));
   el.querySelectorAll("[data-a]").forEach((qEl) => {
@@ -1063,8 +1131,8 @@ pnl.host.querySelector(".replay").onclick = () => {
 };
 
 // the scenario to open with: the first that tips, then the first that might
-function worstScenario(statuses) {
-  return KEYS.find((k) => statuses[k] === "tips") || KEYS.find((k) => statuses[k] === "maybe") || "quake";
+function worstScenario(statuses, keys = KEYS) {
+  return keys.find((k) => statuses[k] === "tips") || keys.find((k) => statuses[k] === "maybe") || keys.at(-1);
 }
 
 function openPanel(room, { focus = null, scenario = null, variant = null } = {}) {
@@ -1072,7 +1140,7 @@ function openPanel(room, { focus = null, scenario = null, variant = null } = {})
   const moved = pnl.room !== room || pnl.focus !== focus;
   pnl.room = room;
   pnl.focus = focus;
-  pnl.scenario = scenario || (moved ? worstScenario(focus ? Object.fromEntries(KEYS.map((k) => [k, focus.card.risks[k].status])) : roomNow(room)) : pnl.scenario);
+  pnl.scenario = scenario || (moved ? worstScenario(focus ? Object.fromEntries(KEYS.map((k) => [k, focus.card.risks[k].status])) : roomNow(room), keysFor(room)) : pnl.scenario);
   pnl.variant = variant;
   document.body.classList.add("panel-open");
   panelEl.inert = false;
@@ -1133,7 +1201,7 @@ function renderPanel(moved = false) {
   pnl.back.hidden = !(multi && p);
 
   // who: the piece, or the room, as it is now
-  const head = p ? { status: p.card.status, headline: p.card.headline, name: esc(pieceName(p.card)) } : roomHeadline(room);
+  const head = p ? { status: statusOf(p, room), headline: verdictOf(p, room), name: esc(pieceName(p.card)) } : roomHeadline(room);
   pnl.who.className = `p-who ${head.status}${moved ? " swap" : ""}`;
   pnl.who.innerHTML = `${p ? `<div class="thumb" style="${thumbStyle(p, p.card.box, 44)}">${multi ? `<span class="num">${p.n}</span>` : ""}</div>`
     : `<div class="thumb room-icon">${ICON.room}</div>`}
@@ -1144,8 +1212,9 @@ function renderPanel(moved = false) {
     const s = p ? statusWith(p, key, v) : roomWith(room, key, v);
     const was = p ? p.card.risks[key].status : roomWith(room, key, null);
     const behind = p || s === "holds" ? "" : room.pieces.filter((q) => statusWith(q, key, v) === s).map((q) => pn(q, s)).join("");
-    return `<button type="button" class="p-tab ${s}${key === k ? " on" : ""}${s !== was ? " better" : ""}" data-k="${key}">
-      <span class="ricon">${ICON[key]}</span><span class="tl">${label}</span><span class="ts">${ICON[s]}${WORD[s]}${behind}</span></button>`;
+    const soon = room.weights?.[key] === "later" && keysFor(room).includes(key) ? `<em class="soon">soon</em>` : "";
+    return `<button type="button" class="p-tab ${s}${key === k ? " on" : ""}${s !== was ? " better" : ""}${weightClass(room, key)}" data-k="${key}" title="${label}${weightNote(room, key)}">
+      <span class="ricon">${ICON[key]}</span><span class="tl">${label}${soon}</span><span class="ts">${ICON[s]}${WORD[s]}${behind}</span></button>`;
   }).join("");
   pnl.tabs.querySelectorAll(".p-tab").forEach((b) => (b.onclick = () => {
     pnl.scenario = b.dataset.k;

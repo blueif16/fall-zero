@@ -402,18 +402,19 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
     # the fixes that clear the most risks first; information-only ones last
     fixes.sort(key=lambda f: ("answer" not in f, -sum(s == "holds" for s in (f["after"] or {}).values())))
 
+    # `about`: the scenarios an answer can change, so a home without one (no earthquakes) isn't asked it
     questions = []
     if status != "holds" and "anchored" not in a:
-        questions.append({"key": "anchored", "title": "Is it already strapped to the wall?",
+        questions.append({"key": "anchored", "about": list(RISK_KEYS), "title": "Is it already strapped to the wall?",
                           "options": [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"},
                                       {"label": "Not sure", "value": "unsure"}]})  # fmt: skip
     if simulate_quakes and not floor_known and not anchored and (current["quake"] != "holds" or fell_items):
-        questions.append({"key": "floor", "title": "Which floor is this room on?",
+        questions.append({"key": "floor", "about": ["quake"], "title": "Which floor is this room on?",
                           "hint": "Upper floors sway with the building and shake furniture far harder.",
                           "options": [{"label": "Ground floor", "value": "ground"},
                                       {"label": "Upper floor", "value": "upper"}]})  # fmt: skip
     if "drawers" not in a and not anchored and d.drawers() and drawers_matter(base, est["depth_is_guess"], a):
-        questions.append({"key": "drawers", "title": "What's in the drawers?",
+        questions.append({"key": "drawers", "about": ["child", "adult"], "title": "What's in the drawers?",
                           "hint": "Full drawers make it heavier.",
                           "options": [{"label": "Full", "value": "full"}, {"label": "About half", "value": "half"},
                                       {"label": "Nearly empty", "value": "empty"}]})  # fmt: skip
@@ -421,7 +422,7 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
         measured = "measured" in a
         if est["depth_is_guess"] and "depth" not in a and not measured:
             lo, hi = (round(d.depth * k * 100) for k in DEPTH_BANDS)
-            questions.append({"key": "depth", "title": "How deep is it, front to back?",
+            questions.append({"key": "depth", "about": ["child"], "title": "How deep is it, front to back?",
                               "hint": "A photo can't show this well.",
                               "options": [{"label": f"Under {lo} cm", "sub": f"{lo / 2.54:.0f} in", "value": "shallow"},
                                           {"label": f"{lo}–{hi} cm", "sub": f"{lo / 2.54:.0f}–{hi / 2.54:.0f} in",
@@ -429,14 +430,14 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
                                           {"label": f"Over {hi} cm", "sub": f"{hi / 2.54:.0f} in", "value": "deep"},
                                           {"label": "Not sure", "value": "unsure"}]})  # fmt: skip
         if "material" not in a and not measured and d.material in WOODS:
-            questions.append({"key": "material", "title": "What is it made of?",
+            questions.append({"key": "material", "about": ["child"], "title": "What is it made of?",
                               "hint": "Heavier furniture is harder to pull over.",
                               "options": [{"label": "Solid hardwood", "sub": "oak, maple", "value": "hardwood"},
                                           {"label": "Pine", "sub": "light solid wood", "value": "softwood"},
                                           {"label": "Particleboard", "sub": "flat-pack, MDF", "value": "board"},
                                           {"label": "Not sure", "value": "unsure"}]})  # fmt: skip
         if not measured and ("depth" in a or "material" in a or not est["depth_is_guess"]):
-            questions.append({"key": "measured", "title": "Got a tape measure?", "kind": "measure",
+            questions.append({"key": "measured", "about": ["child"], "title": "Got a tape measure?", "kind": "measure",
                               "hint": "Exact size settles it.",
                               "guess": {"width_cm": round(d.width * 100), "depth_cm": round(d.depth * 100),
                                         "height_cm": round(d.height * 100)}})  # fmt: skip
@@ -552,7 +553,7 @@ def judged_card(entry: dict, answers: dict | None = None) -> dict:
     # asked only while an answer could still change something: once a fix settles it ("Is it fixed to the
     # wall?" after strapping it), every answer leads to the same statuses
     if q and "judged" not in a and any(settled(o["after"]) != now for o in q["options"]):
-        questions.append({"key": "judged", "title": q["title"],
+        questions.append({"key": "judged", "about": list(RISK_KEYS), "title": q["title"],
                           "options": [{"label": o["label"], "value": o["label"]} for o in q["options"]]})  # fmt: skip
     return {
         "name": entry["piece"]["name"],

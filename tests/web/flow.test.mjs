@@ -1,7 +1,7 @@
 // The flow's rules (web/flow.js) on small hand-built rooms: run with `node --test tests/web/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith, weightsFor, keysFor, statusOf } from "../../web/flow.js";
+import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith, weightsFor, keysFor, statusOf, askGroups } from "../../web/flow.js";
 
 const ALL = (s) => ({ child: s, adult: s, quake: s });
 const risks = (r) => Object.fromEntries(Object.entries(r).map(([k, status]) => [k, { status, says: "" }]));
@@ -291,4 +291,12 @@ test("who's home not confirmed yet is one more thing to be sure of", () => {
   assert.match(nextLine(r).text, /one quick answer/);
   r.askHome = false;
   assert.equal(stepOf(r), "plan");
+});
+
+test("a question only about a scenario this home doesn't have isn't asked", () => {
+  const floor = { ...floorQ, about: ["quake"] };
+  const anchoredQ = { key: "anchored", title: "Is it strapped?", options: [], about: ["child", "adult", "quake"] };
+  const r = room(card({ fixes: [strapN(ALL("holds"))], questions: [floor, anchoredQ] }));
+  r.weights = { child: "primary", adult: "primary", quake: "none" };
+  assert.deepEqual(askGroups(r).map((a) => a.q.key), ["anchored"]);
 });
