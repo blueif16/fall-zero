@@ -72,14 +72,17 @@ def _across(box, piece) -> float | None:
 def _same_things(before: dict, after: dict) -> tuple[list[str], list[str]]:
     """What was put on a piece and what was taken off. A thing goes by its name, or else by its place (on
     top or on a shelf, at about the same spot along the piece), since one photo's "vase" is another's
-    "potted plant". Breakdowns saved before places were kept go by name alone."""
+    "potted plant", or else by a word their names share ("basket", "woven basket")."""
     old = list(before.get("spots") or [{"name": n} for n in before["items"]])
     put = []
     for t in after.get("spots") or [{"name": n} for n in after["items"]]:
         near = [o for o in old if o.get("x") is not None and t.get("x") is not None and o.get("where") == t.get("where")
                 and abs(o["x"] - t["x"]) < NEAR]  # fmt: skip
-        same = next((o for o in old if o["name"] == t["name"]), None) or (
-            min(near, key=lambda o: abs(o["x"] - t["x"])) if near else None
+        named = [o for o in old if _words(o["name"]) & _words(t["name"])]  # "basket", "woven basket"
+        same = (
+            next((o for o in old if o["name"] == t["name"]), None)
+            or (min(near, key=lambda o: abs(o["x"] - t["x"])) if near else None)
+            or (named[0] if named else None)
         )
         if same:
             old.remove(same)

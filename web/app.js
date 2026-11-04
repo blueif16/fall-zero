@@ -15,6 +15,7 @@ import {
   RISKS, WORD, garbled, clip, tidy, itemName, pieceName, fixTitle, RANK, KEYS, worstOf, cap1,
   fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine, costText, timeText,
   shoppingList, planOutcome, rowHow, stuckOptions, handoffText, weightsFor, keysFor, statusOf,
+  reminders, icsText, nextRoom, planHTML,
 } from "./flow.js";
 
 const $ = (id) => document.getElementById(id);
@@ -444,6 +445,7 @@ async function send() {
   } finally {
     bot.finish();
     busy = false;
+    if (file) refreshLibrary().catch(() => {}); // the room just checked is in the library now
     updateSend();
     summarizeStatus();
     thread.previous_response_id = previousId;
@@ -757,6 +759,8 @@ const saveHome = () => {
   } catch {}
 };
 const rooms = () => [...new Set(pieces.map((p) => p.room))];
+let libraryNames = []; // the names of the rooms in the home's library, for "the room to check next"
+const checkedNames = () => [...libraryNames, ...rooms().map((r) => r.ev.report.room || "")];
 fetch("/api/catalog/household").then((r) => r.json()).then((h) => {
   HOUSEHOLD = h;
   rooms().forEach(renderCard);
@@ -827,6 +831,45 @@ function saveRoom(room) {
     fetch(`/api/home/rooms/${room.id}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Owner": OWNER }, body }).catch(() => {});
   }, 400));
 }
+
+// --- keeping it safe: reminders and the plan on paper ----------------------------------------------
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+function remindMe() {
+  const list = reminders(home, HOUSEHOLD, today());
+  const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+  const url = URL.createObjectURL(new Blob([icsText(list, stamp)], { type: "text/calendar" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: "fall-zero-reminders.ics" });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(list.length > 1 ? `${list.length} reminders: open the file to add them to your calendar` : "Open the file to add it to your calendar");
+}
+
+async function printPlan() {
+  const win = window.open("", "_blank"); // opened now, while it's still the tap's
+  let recs = [];
+  try {
+    recs = (await (await homeApi()).json()).rooms;
+  } catch {}
+  if (!win) return toast("Allow pop-ups to print the plan");
+  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Our home's tip-over plan</title><style>
+    body { font: 14px/1.45 system-ui, sans-serif; max-width: 720px; margin: 32px auto; color: #16161a; padding: 0 16px; }
+    h1 { font-size: 24px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 22px 0 2px; border-top: 1px solid #ddd; padding-top: 14px; }
+    h3 { font-size: 15px; margin: 10px 0 2px; } h3 span { font-size: 12px; padding: 1px 8px; border-radius: 999px; margin-left: 6px; }
+    .tips { background: #fef2f2; color: #dc2626; } .maybe { background: #fffbeb; color: #b45309; } .holds { background: #f0fdf4; color: #15803d; }
+    .when { color: #6b6b76; margin: 0; } ul { margin: 2px 0 0; padding-left: 20px; } li.done { color: #15803d; list-style: none; margin-left: -16px; }
+  </style></head><body>${planHTML(recs, home, HOUSEHOLD, today())}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+// The last block of a safe room: when to look again, and the plan to keep
+const keepHTML = () => `<section class="block keep"><h4>${ICON.clock}Keep it safe</h4><div class="keepbtns">
+  <button type="button" class="habit" data-keep="remind">${ICON.clock}<span>Remind me</span></button>
+  <button type="button" class="habit" data-keep="print">${ICON.box}<span>Print the plan</span></button></div></section>`;
+const bindKeep = (el) => el.querySelectorAll("[data-keep]").forEach((b) => (b.onclick = () => (b.dataset.keep === "remind" ? remindMe() : printPlan())));
 
 // --- where the room is: the steps of a check, and the one thing to do next ------------------------
 
@@ -1019,6 +1062,7 @@ function handedHTML(room, groups, enter) {
 
 function renderCard(room) {
   applyHome(room);
+  room.suggest = nextRoom(home, HOUSEHOLD, checkedNames());
   const ps = room.pieces;
   const head = roomHeadline(room);
   const enter = enterer(room);
@@ -1061,7 +1105,8 @@ function renderCard(room) {
       ${shopHTML(room)}<div class="todo">${rows}</div>${planEndHTML(room, acts)}</section>` : ""}
     ${handedHTML(room, handed, enter)}
     ${habits.length ? `<section class="block"><h4>${ICON.hand}Good habits</h4>${chips}</section>` : ""}
-    ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${folded}${notes}`;
+    ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${folded}${notes}
+    ${step === "safe" ? keepHTML() : ""}`;
   enter.done();
   if (popped) room.el.querySelector(".gv")?.classList.add("pop");
   ps.forEach((p) => p.marker && (p.marker.style.color = `var(--${statusOf(p, room)})`));
@@ -1081,6 +1126,7 @@ function bindCard(room) {
   }));
   el.querySelector(".next")?.addEventListener("click", () => goNext(room));
   bindHome(room);
+  bindKeep(el);
   el.querySelector(".gv").onclick = () => openPanel(room);
   el.querySelectorAll(".gs").forEach((b) => (b.onclick = () => openPanel(room, { scenario: b.dataset.k })));
   el.querySelectorAll("[data-a]").forEach((qEl) => {
@@ -1644,7 +1690,12 @@ const homeApi = (path = "", init = {}) =>
   fetch(`/api/home${path}`, { ...init, headers: { ...init.headers, "X-Owner": OWNER } });
 
 // The server's household, when this browser hasn't confirmed one (another tab, an earlier visit)
-homeApi().then((r) => r.json()).then(({ household }) => {
+const refreshLibrary = () => homeApi().then((r) => r.json()).then(({ household, rooms: recs }) => {
+  libraryNames = recs.map((r) => r.name);
+  rooms().forEach(renderCard);
+  return household;
+});
+refreshLibrary().then((household) => {
   if (household?.confirmed && !home.confirmed) {
     Object.assign(home, household);
     saveHome();
@@ -1674,7 +1725,10 @@ function homeHead(recs) {
   const shop = homeShopping(recs);
   const buy = shop.items.length || shop.minutes
     ? `<div class="hshop">${ICON.bag}<span>${esc(shop.items.map((x) => `${x.qty} × ${x.item}`).join(" · ") || "Nothing to buy")}</span><span class="sm">${chip(costText(shop))}${chip(timeText(shop), ICON.clock, "time")}</span></div>` : "";
-  return who + buy;
+  const keep = `<div class="keepbtns home">
+    <button type="button" class="habit" data-keep="remind">${ICON.clock}<span>Remind me</span></button>
+    <button type="button" class="habit" data-keep="print">${ICON.box}<span>Print the plan</span></button></div>`;
+  return who + buy + keep;
 }
 
 function roomItem(r, i) {
@@ -1723,6 +1777,7 @@ async function openHistory() {
     };
     item.onkeydown = (e) => e.key === "Enter" && open();
   });
+  bindKeep(els.historyList);
   els.historyList.querySelector("[data-home-change]")?.addEventListener("click", () => {
     home.confirmed = false; // "Who's home?" is asked again on the room cards
     saveHome();

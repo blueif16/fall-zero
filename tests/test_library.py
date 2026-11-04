@@ -211,3 +211,13 @@ def test_a_thing_renamed_in_the_new_photo_is_the_same_thing_if_it_sits_in_the_sa
     said = {(c["kind"], c.get("item")) for c in library.changes(old["breakdown"], new["breakdown"])}
     assert ("added", "TV") in said and ("removed", "basket") in said  # nothing like them there before / now
     assert ("added", "potted plant") not in said and ("removed", "vase") not in said  # the same pot, renamed
+
+
+def test_without_places_a_thing_whose_name_shares_a_word_is_the_same_thing():
+    """Breakdowns saved before places were kept: "basket" then "woven basket" is one basket."""
+    old = {"pieces": [{"id": "p1", "name": "bookcase", "x": 0.2, "status": CALM, "items": ["basket", "vase"],
+                       "falls": [], "done": []}]}  # fmt: skip
+    new = {"pieces": [{"id": "p1", "name": "bookcase", "x": 0.2, "status": CALM, "items": ["woven basket", "TV"],
+                       "falls": ["TV"], "done": []}]}  # fmt: skip
+    said = {(c["kind"], c.get("item")) for c in library.changes(old, new)}
+    assert said == {("added", "TV"), ("removed", "vase")}

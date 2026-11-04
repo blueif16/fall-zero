@@ -1,7 +1,7 @@
 // The flow's rules (web/flow.js) on small hand-built rooms: run with `node --test tests/web/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith, weightsFor, keysFor, statusOf, askGroups } from "../../web/flow.js";
+import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith, weightsFor, keysFor, statusOf, askGroups, reminders, icsText, nextRoom, planHTML, addMonths } from "../../web/flow.js";
 
 const ALL = (s) => ({ child: s, adult: s, quake: s });
 const risks = (r) => Object.fromEntries(Object.entries(r).map(([k, status]) => [k, { status, says: "" }]));
@@ -299,4 +299,68 @@ test("a question only about a scenario this home doesn't have isn't asked", () =
   const r = room(card({ fixes: [strapN(ALL("holds"))], questions: [floor, anchoredQ] }));
   r.weights = { child: "primary", adult: "primary", quake: "none" };
   assert.deepEqual(askGroups(r).map((a) => a.q.key), ["anchored"]);
+});
+
+// --- keeping it safe -----------------------------------------------------------------------------
+const KEEP = {
+  ...HOUSEHOLD,
+  child: { options: [{ key: "crawling", scenarios: { child: "later" }, next: { months: 4, say: "Babies pull up by 12 months." } }] },
+  older: { options: [{ key: "lives_here", scenarios: { adult: "primary" }, next: { months: 6, say: "Check what they lean on." } }] },
+  recheck: { months: 6, title: "Check the straps", say: "Pull each top gently; it shouldn't move." },
+  rooms: [
+    { name: "child's bedroom", match: ["bedroom", "nursery"], for: { child: ["crawling", "climbing"] }, why: "most deaths happen in bedrooms" },
+    { name: "living room", match: ["living", "tv"], why: "TVs are in half of deaths" },
+    { name: "kitchen", match: ["kitchen"], why: "ranges tip" },
+  ],
+};
+
+test("months are added to a date, a month's last day staying in its month", () => {
+  assert.equal(addMonths("2026-11-04", 4), "2027-03-04");
+  assert.equal(addMonths("2027-01-31", 1), "2027-02-28");
+});
+
+test("the reminders are the strap check for everyone, and the next milestone of who's home", () => {
+  const r = reminders({ child: "crawling", confirmed: true }, KEEP, "2026-11-04");
+  assert.deepEqual(r.map((x) => [x.date, x.say]), [["2027-03-04", "Babies pull up by 12 months."], ["2027-05-04", "Pull each top gently; it shouldn't move."]]);
+  assert.deepEqual(reminders({}, KEEP, "2026-11-04").map((x) => x.title), ["Check the straps"]); // nothing confirmed yet
+  assert.deepEqual(reminders({ child: "crawling" }, KEEP, "2026-11-04").map((x) => x.title), ["Check the straps"]); // picked, not confirmed
+});
+
+test("the calendar file holds one all-day event per reminder, escaped and folded as calendars expect", () => {
+  const long = "A, b; c\\d " + "x".repeat(120);
+  const ics = icsText([{ title: "Check the straps", date: "2027-05-04", say: long }], "20261104T120000Z");
+  const lines = ics.split("\r\n");
+  assert.equal(lines[0], "BEGIN:VCALENDAR");
+  assert.ok(lines.includes("DTSTART;VALUE=DATE:20270504"));
+  assert.ok(lines.includes("SUMMARY:Fall 0: Check the straps"));
+  assert.ok(lines.every((l) => new TextEncoder().encode(l).length <= 75), "folded at 75 octets");
+  const desc = lines.slice(lines.findIndex((l) => l.startsWith("DESCRIPTION:"))).join("\r\n").replace(/\r\n /g, "");
+  assert.ok(desc.startsWith("DESCRIPTION:A\\, b\\; c\\\\d x"), desc.slice(0, 40));
+  assert.equal(lines.filter((l) => l === "BEGIN:VEVENT").length, 1);
+  assert.ok(ics.endsWith("END:VCALENDAR\r\n"));
+});
+
+test("the next room is the first for this home that hasn't been checked", () => {
+  assert.equal(nextRoom({ child: "crawling", confirmed: true }, KEEP, ["living room"]).name, "child's bedroom");
+  assert.equal(nextRoom({ child: "crawling", confirmed: true }, KEEP, ["nursery", "living room"]).name, "kitchen");
+  assert.equal(nextRoom({}, KEEP, []).name, "living room"); // the child's bedroom is for homes with a child
+  assert.equal(nextRoom({}, KEEP, ["living room", "kitchen"]), null);
+});
+
+test("a safe room's next names the room to check next, and why", () => {
+  const r = room(card({ now: ALL("holds"), fixes: [strapN(ALL("holds"), true)] }));
+  r.suggest = { name: "living room", why: "TVs are in half of deaths" };
+  assert.match(nextLine(r).text, /Next: the living room \(TVs are in half of deaths\)/);
+});
+
+test("the printed plan lists each room, what's left to do and buy, and escapes what the model wrote", () => {
+  const recs = [{ name: "living <room>", updated: "2026-11-04T10:00:00Z", breakdown: { status: ALL("tips"), pieces: [
+    { name: "bookcase", status: ALL("tips"), done: ["Strap the TV"], todo: [{ title: "Strap it to the wall", item: "Anti-tip straps", count: 2, cost_usd: [10, 25], minutes: 15 }] }] } }];
+  const html = planHTML(recs, {}, KEEP, "2026-11-04");
+  assert.match(html, /Living &lt;room&gt;/); // names are capitalized on paper as on the page
+  assert.match(html, /Strap it to the wall/);
+  assert.match(html, /2 × Anti-tip straps/);
+  assert.match(html, /\$10–25/);
+  assert.match(html, /Strap the TV/); // what's done, with the record
+  assert.doesNotMatch(html, /<room>/);
 });

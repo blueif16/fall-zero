@@ -435,6 +435,9 @@ main {
 .kchip.worse, .kchip.added { color: var(--tips); border-color: #f6c9c9; }
 .kchip.new, .kchip.moved { color: var(--maybe); border-color: #f3dfb3; }
 .kchip.gone, .kchip.removed, .kchip.more { color: var(--muted); }
+/* keep it safe: reminders and the plan on paper */
+.keepbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.keepbtns.home { padding: 4px 10px 8px; }
 /* My home: who's home, the rooms and what's left to buy, then the chats */
 .hsec { padding: 10px 10px 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
 .hwho, .hshop { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; color: #3b3b44; min-width: 0; }
