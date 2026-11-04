@@ -38,7 +38,7 @@ One home, one plan, five steps. Every room card shows where it is, and only that
 | **3 Your plan** | "Which first, and what do I buy?" | The fixes grouped the way people act: **Now, free** (move the TV and heavy things) → **This weekend** (one shopping list with total cost and time) → **Needs someone** (landlord, handyman). Each group says what the room becomes after it. | `todo()`, `fixGroups()`, `statusWith()`/`roomWith()`, and `how` from `fixes.toml` (buy, cost, time) | The grouping, the combined shopping list, "after this group" |
 | **4 Fix it** | "How, on *my* wall?" | One fix at a time, step by step, with the simulation of that fix beside it. **"I'm stuck"** lists the real stuck points: metal studs, plaster or brick, no holes in the back, not against a wall, can't drill, someone said no. Each leads to an alternative or to someone who can do it. | `howHTML` (steps, avoid, renter; currently in the panel), "Show me" | The step-through; a `stuck` table per fix kind in `fixes.toml` |
 | **5 Check it** | "Did it work?" | After "I did this", a ten-second physical check ("pull the top gently: it shouldn't move"). If it holds, the physics re-runs and the before and after play, with the date. If it moved, Fall 0 goes back to "I'm stuck". | `toggleDone` → `recheck` → `/api/assess`, the variant replay | A `check` per fix kind in `fixes.toml` (the range bracket already has one); "checked on" |
-| **Then: keep it safe** | "Am I done?" | Next room, especially the living room. A reminder for the next milestone (from the age band), a strap check in 6 months, and "check before a new piece goes against the wall". The plan can be shared with a partner, a landlord or a handyman. | Past checks (`openHistory`) | One chat = one home; past checks becomes "My home"; `.ics` reminders; a shareable plan |
+| **Then: keep it safe** | "Am I done?" | Next room, especially the living room. A reminder for the next milestone (from the age band), a strap check in 6 months, and "check before a new piece goes against the wall". The plan can be shared with a partner, a landlord or a handyman. | Past checks (`openHistory`) | The room library (Fall 0's memory: a known room is recognized and updated); "My home"; `.ics` reminders; a shareable plan |
 
 **The voice follows the step.** A "Next:" line on the room card is recomputed after every tap, for
 example "2 of 3 done. Next: strap the bookcase, 15 min". It never contradicts the card. Muse Spark's
@@ -80,57 +80,136 @@ sentence stays as the opener, and follow-ups get the current step as context (`c
 
 - **Product buy links and affiliate links.** In the trial, 68,797 check-offs led to only 255 trips to
   Amazon. A clear "what to buy" line is enough.
-- **Accounts or logins.** A home is a saved chat, as today.
+- **Accounts or logins.** The home is kept per browser, like saved chats today.
 - **A native app or AR.**
 - **Checking the fix from a photo by vision.** It's unreliable, and the physical check is the stronger
   signal. Maybe later.
 
-## Phases
+## Decided (2026-11-04)
 
-### Phase 0: tonight, only if it fits before the 9 PM ET submission
-Front end only, with no new model calls or pipeline changes. Timeboxed to about an hour so the demo can
-still be recorded.
+- **Build the whole design**, not a slice for the deadline. The goal is set first, then every step
+  below is built and checked in order.
+- **Who's home is asked after the first photo**, prefilled from the survey's guess.
+- **The home is a room library, and it is Fall 0's memory.**
+  - Every analyzed room is kept: its photo, its pieces and their outlines, the answers, and what was
+    done and checked, with dates. The person can remove a room.
+  - A new photo, even in a new chat, is matched against the library. A known room is updated rather
+    than started over: "Your living room again: the bookcase you strapped on Nov 2 still holds". This is
+    how Fall 0 shows it understands the home's layout.
+- **Check it is a physical check prompt.** No re-photo by vision.
 
-1. **The "Next:" line** on the room card, recomputed from the card state after every tap. This fixes the
-   stale reply.
-2. **One shopping line** under "Do these first": the undone fixes' `buy`, the cost range and the total
-   time.
-3. **A demo script that follows the flow:** what can fall → watch it fall → plan → I did this → check →
-   holds. This needs no code.
+## Goal
 
-### Phase 1: the five steps (about 2–3 days)
-1. The step rail on the room card, with the current step derived from state:
-   - questions still open → Be sure;
-   - fixes not done → Your plan or Fix it;
-   - everything done → Checked.
-2. Who's home: the chips, prefilled from `people`, saved with the chat. Scenario order and dimming,
-   renter-first `how`.
-3. Plan groups (now, free / this weekend / needs someone), the shopping list, and "after this group".
-4. The "Fix it" step-through, plus `stuck` and `check` for every fix kind in `fixes.toml`. Tests: every
-   kind has both, and every stuck option points to a fix kind or a hand-off that exists.
-5. Check it: the physical check → recheck → before and after → "checked on <date>".
-6. The front page's four steps rewritten to match these five, and the clips re-recorded with
-   `tools/tutorial.py`.
+For any home, Fall 0 runs the whole tip-over job as one flow: who's home → what can fall → your plan →
+fix it → check it → keep it safe. It remembers every room it has seen, so a new photo of a known room
+updates that room instead of starting over.
 
-### Phase 2: home and coming back
-1. **One chat = one home.**
-   - The rail's status becomes the home's progress ("2 rooms · 4 of 5 safe").
-   - Past checks becomes "My home": rooms, status, the combined plan and shopping list.
-2. **Hand-offs:**
-   - a shareable, printable plan (the written record);
-   - a landlord request drafted from the plan (ask, explain, offer to repair, in writing);
-   - a handyman work order (the photo with outlines, and what goes where).
-3. **Reminders as `.ics` files:**
-   - the next milestone from the age band;
-   - a strap check in 6 months;
-   - "after you move furniture".
-4. **"Before you buy" as a second way in** (PRD P1): a listing photo and its dimensions → one piece's
-   verdict and what you'll need. The recall check (PRD P1) fits in step 2.
+## Build plan
 
-## Decisions needed
+Each step is merged only when its "done when" holds and has been checked: tests, or a screenshot of the
+running app. Steps 4a and 6a–6c can run in parallel with the front-end steps.
 
-1. **Tonight:** Phase 0, or leave the code alone and only record the demo?
-2. **Who's home:** after the first photo, prefilled (recommended), or before it, the way professionals
-   ask first?
-3. **One chat = one home** (recommended), or a separate home object?
-4. **Check it:** the physical check prompt only (recommended), or a re-photo checked by vision too?
+### S1. The flow's logic, pure and tested (`web/flow.js`)
+- **1a.** Move the room logic out of `app.js` into `web/flow.js`, a module with no DOM. `app.js`
+  imports it, and nothing changes on screen. The functions: `worstOf`, `statusWith`, `roomWith`,
+  `roomNow`, `fixGroups`, `todo`, `askGroups`, `plan`, `bestScenario`.
+- **1b.** `stepOf(room)`: the room's current step (what can fall / be sure / plan / fix / check /
+  safe).
+- **1c.** `nextLine(room)`: the one "Next:" sentence and what it points at.
+- **1d.** `node --test tests/web/`, with fixtures taken from a real saved report.
+- **Done when:** the tests pass, and each fails if the rule it covers is broken.
+
+### S2. The step rail and the "Next:" line on the room card
+- **2a.** A rail: What can fall · Be sure · Plan · Fix · Check. The current step is marked and done
+  steps are ticked. Tapping a step that's done or open goes to it.
+- **2b.** The "Next:" line is recomputed on every render. Muse Spark's sentence stays above as the
+  opener.
+- **2c.** The current step's content leads, and the rest folds away.
+- **Done when:** in the replayed living-room chat, nothing on the card contradicts the rail or the
+  "Next:" line, checked with a screenshot of each step.
+
+### S3. Your plan
+- **3a.** `fixes.toml` gets numbers instead of display strings: `cost_usd = [lo, hi]`, `minutes`, and
+  `buy` with a count per piece. The page formats them. `assess.how` and the chips are updated.
+- **3b.** `planGroups(room)`: Now, free → This weekend → Needs someone. Each group says what the room
+  becomes once it and the groups before it are done.
+- **3c.** `shoppingList(room)`: items merged with counts, plus the total cost range and total time.
+- **Done when:** on the living-room sample, the "This weekend" line adds up to its rows, and the tests
+  cover the merging.
+
+### S4. Fix it and Check it
+- **4a. Content, in `fixes.toml`**, sourced from JOURNEY.md and RESEARCH.md:
+  - for every fix kind with steps, a `check` (the question, plus what "holds" and "it moved" mean);
+  - a `stuck` list: metal studs, plaster/brick/concrete, no holes in the back, not against a wall,
+    can't drill or renting, someone said no;
+  - each stuck option gives an answer and a `then`: another fix kind, `landlord`, or `handyman`.
+- **4b. Tests:** every anchoring kind has a check and at least four stuck options, and every `then`
+  points at something that exists.
+- **4c. Fix it, in the card:**
+  - one step at a time, with Back and Next;
+  - "I'm stuck" opens the list from 4a;
+  - the panel plays that fix;
+  - the last step leads to Check it.
+- **4d. Check it:**
+  - **Holds:** done → physics re-run → the panel plays before, then after. The fix records "checked
+    on <date>", in the chat and in the library.
+  - **It moved:** back to "I'm stuck".
+- **4e. Hand-offs:**
+  - a landlord message to copy, filled with the pieces and the fix;
+  - a printable handyman work order: the photo with outlines, and what goes where.
+- **Done when:**
+  - on the nursery sample, plan → fix → check → holds works, with before and after in the panel;
+  - "I'm stuck → I rent" leads to the landlord message.
+
+### S5. Who's home
+- **5a.** The survey also returns a structured guess at the household: the child's age band and an
+  older adult. The earthquake area and renting can't be seen, so they start as unknown. The Survey
+  section of `SKILL.md` asks for it.
+- **5b.** `catalog/household.toml`: what each answer changes.
+  - Each scenario is marked primary, later ("soon" for a crawler) or not for this home.
+  - The next milestone and when it comes.
+  - Renting puts renter options first.
+- **5c.** A row of chips on the first room card, prefilled, one tap to confirm. Saved for the whole
+  home.
+- **5d.** The effects:
+  - The headline, the glance row and the panel tabs follow what matters for this home.
+  - A scenario that doesn't apply is dimmed, never hidden.
+  - Renters see the renter option first, and landlord hand-offs.
+- **Done when:** changing a chip re-ranks the card without running the physics again, and `flow.js` tests
+  cover it.
+
+### S6. The room library: Fall 0's memory of the home
+- **6a. Storage:**
+  - `homes/<owner>/home.json` holds the household;
+  - `homes/<owner>/rooms/<id>.json` holds each room: its name, still, size, pieces (with stable ids,
+    names, families and outlines), the answers per piece, done and checked dates, and every check of
+    it;
+  - the API gets the home, saves the household, and removes a room;
+  - tests in `test_store.py` / `test_server`.
+- **6b. Saving:** every analyzed photo goes into the library, as a new room or an update.
+- **6c. Recognizing:**
+  - When the library has rooms, Muse Spark gets the new still and the rooms' thumbnails and returns
+    the matching room (or none) and which piece is which. The prompt goes in a "Match" section of
+    `SKILL.md`. It runs alongside SAM and the describe step.
+  - The matched pieces' answers are carried over before the cards are built.
+  - The report says which room it is, since when, and what was carried over.
+- **6d. "My home" (past checks becomes this):**
+  - each room with its thumbnail, status, progress and when it was last checked, and Remove;
+  - a known room's card says "Your living room again · checked Nov 2 · 1 strapped".
+- **6e. One plan for the home:** S3 across every room, with one shopping list.
+- **Done when:**
+  - the living-room sample sent again in a new chat is recognized, and its strapped bookcase arrives as
+    "holds";
+  - after the room is removed, the next send is new again.
+
+### S7. Keep it safe
+- **7a. Reminders:** `.ics` files made in the browser for the next milestone (from the household), a
+  strap check in 6 months, and "after you move furniture". The wording comes from `household.toml`.
+- **7b. The plan, printed or shared:** a print layout for the home plan, as the written record.
+- **7c. The next room:** when a room is done, Fall 0 suggests the next one to check, from who's home
+  (bedrooms and the living room for a child).
+
+### S8. Wrap-up
+- **8a.** The front page's steps match the flow, and the clips are re-recorded with `tools/tutorial.py`.
+- **8b.** README, HANDOFF and PRD updated. `pytest`, `node --test` and `ruff` pass. Deploy to Vercel
+  and check the live site end to end.
