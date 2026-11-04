@@ -13,7 +13,8 @@
 
 import {
   RISKS, WORD, garbled, clip, tidy, itemName, pieceName, fixTitle, RANK, KEYS, worstOf, cap1,
-  fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine,
+  fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine, costText, timeText,
+  shoppingList, planOutcome, rowHow,
 } from "./flow.js";
 
 const $ = (id) => document.getElementById(id);
@@ -657,10 +658,10 @@ const chip = (text, icon = "", cls = "") =>
 // One row of the to-do list: what, which pieces, what it costs; "Show me" previews it in the panel
 function todoRow(room, g, i, enter) {
   const e = enter(`f:${g.key}`);
-  const how = g.f.how || {};
+  const how = rowHow(g) || {};
   const meta = [
     room.pieces.length > 1 ? `<span class="who">${badges(g.members.map((m) => m.p))}</span>` : "",
-    chip(how.cost), chip(how.time, ICON.clock, "time"),
+    chip(costText(how)), chip(timeText(how), ICON.clock, "time"),
   ].join("");
   const show = g.done ? "" : `<button class="show-btn" type="button" title="Show it in the simulation">${ICON.play}<span>Show me</span></button>`;
   const did = `<button class="done-btn" type="button">${g.done ? `${ICON.holds}Done` : "I did this"}</button>`;
@@ -668,6 +669,23 @@ function todoRow(room, g, i, enter) {
     <span class="ficon">${g.done ? ICON.holds : fixIcon(g.f)}</span>
     <div class="tt"><div class="ft">${esc(g.title)}</div>${meta ? `<div class="tm">${meta}</div>` : ""}</div>
     <div class="acts">${show}${did}</div></div>`;
+}
+
+// Above the to-do list: everything to buy for the fixes not done yet, and what they cost and take in all
+function shopHTML(room) {
+  const list = shoppingList(room);
+  if (!list.minutes && !list.items.length) return "";
+  const what = list.items.length ? list.items.map((x) => `${x.qty} × ${x.item}`).join(" · ") : "Nothing to buy";
+  return `<div class="shop">${ICON.bag}<span class="sw" title="${esc(what)}">${esc(what)}</span>
+    <span class="sm">${chip(costText(list))}${chip(timeText(list), ICON.clock, "time")}</span></div>`;
+}
+
+// Below it, once there's more than one fix to do: what the room becomes with all of them done
+function planEndHTML(room, acts) {
+  if (acts.filter((g) => !g.done).length < 2) return "";
+  const then = planOutcome(room);
+  return then ? `<div class="plan-end holds">${ICON.holds}<span>With all of these, ${then}</span></div>`
+    : `<div class="plan-end tips">${ICON.tips}<span>Even with all of these, some of it can still tip</span></div>`;
 }
 
 // A good habit (advice with nothing to tick off or simulate): a chip; the panel says how
@@ -745,7 +763,7 @@ function renderCard(room) {
   room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}
     ${asking ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
     ${acts.length ? `<section class="block"><h4>${ICON.wrench}${head.status === "holds" ? "Keep it that way" : "Do these first"}</h4>
-      <div class="todo">${rows}</div></section>` : ""}
+      ${shopHTML(room)}<div class="todo">${rows}</div>${planEndHTML(room, acts)}</section>` : ""}
     ${habits.length ? `<section class="block"><h4>${ICON.hand}Good habits</h4>${chips}</section>` : ""}
     ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${folded}${notes}`;
   enter.done();
@@ -1043,7 +1061,7 @@ function howHTML(room, g, p, k) {
   }
   const beside = g.act ? "on-phone" : ""; // a good habit's chip in the chat has no cost or time
   const tools = (how.tools || []).join(" · ");
-  const chips = [chip(how.buy, ICON.bag, "buy"), chip(how.cost, "", beside), chip(how.time, ICON.clock, beside), chip(tools, ICON.wrench, "tool")].join("");
+  const chips = [chip(how.buy, ICON.bag, "buy"), chip(costText(how), "", beside), chip(timeText(how), ICON.clock, beside), chip(tools, ICON.wrench, "tool")].join("");
   const steps = (how.steps || []).slice(0, 4).map((s, i) => `<li><span class="sn">${i + 1}</span><span>${esc(clip(s, 140))}</span></li>`).join("");
   const line = (cls, icon, text) => (text ? `<p class="hl ${cls}" title="${esc(text)}">${icon}<span>${esc(clip(text, 240))}</span></p>` : "");
   return `<div class="how">${title}${chips ? `<div class="hchips">${chips}</div>` : ""}

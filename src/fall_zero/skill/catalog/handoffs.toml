@@ -1,0 +1,29 @@
+# The messages for when someone else has to say yes or do the work: the page's "Needs someone" hand-offs
+# (docs/FLOW.md S4e) read this, and a stuck option's `then` in fixes.toml names one of these tables.
+# `label`: the chip. `intro`: the one line above the message. `template`: the message to copy and send; the
+# page fills `{pieces}` (the piece names), `{fixes}` (the fix labels) and `{room}`. `source`: where it comes from.
+
+[landlord]
+label = "Ask my landlord"
+intro = "A message to copy and send: what you'd like to fix and why, that you'll fill the holes, and a request for a written OK."
+template = """Hi, I'd like your OK to secure some furniture in the {room} so it can't tip over: {pieces}. The fix: {fixes}.
+
+Tip-overs send about 17,800 people a year to US emergency rooms, and most of those killed are young children (CPSC).
+
+It takes a couple of small screws per piece, into a wall stud. I will fill and touch up the holes when I move out.
+
+Could you confirm in writing that this is OK? A reply to this message is fine. Thank you."""
+source = "NSW Government, toppling furniture and TVs (ask, explain why, offer to repair at move-out, get it in writing): https://www.nsw.gov.au/legal-and-justice/consumer-rights-and-protection/safety/other-consumer-products/toppling-furniture-and-televisions; Gate & Guard renter email script: https://gateandguard.com/furniture-anchors/anchoring-furniture-in-a-rental; CPSC 2023 tip-over report: https://www.cpsc.gov/s3fs-public/2023_Annual_Tip_Over_Report_Posted_2024Feb_FINAL_0.pdf"
+
+[handyman]
+label = "Get a handyman"
+intro = "A work order to send or print: what to install, on which pieces, and how it has to be fixed."
+template = """Work order: anti-tip install, {room}
+Pieces: {pieces}
+Install: {fixes}
+- Screw every wall bracket into the center of a stud, never into drywall alone. Metal studs: toggles made for them. Brick or concrete: masonry screws.
+- Fix the furniture end into a solid top or side panel, not the thin back. Two straps per piece.
+- Scan for wires and pipes before drilling.
+- Range: the maker's bracket, with the rear foot locked under it.
+Done when the top of each piece doesn't move when pulled gently."""
+source = "CPSC Anchor It, how to install a kit: https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/; Consumer Reports anchor-kit tests (2 anchors per piece, not bare drywall): https://nbcdfw.com/news/consumer-reports/furniture-anchors-prevent-deaths-and-injuries-consumer-reports-put-kits-to-the-test/3702524/; Peerless-AV metal-stud instructions: https://peerless-av.com/_product-assets/en-us/1010452639/Assembly-Instructions.pdf; IKEA anchoring guide: https://www.ikea.com/us/en/files/pdf/d4/4a/d44a59ef/just_a_moment_guide_2025.pdf; GE Appliances anti-tip bracket instructions: https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf"
