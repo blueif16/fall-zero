@@ -248,7 +248,7 @@ export function nextLine(room) {
   if (step === "sure") { // the questions are right below: say how many, not which
     const asks = askGroups(room);
     const n = asks.length + (room.askHome ? 1 : 0);
-    return { step, text: `Next: ${n === 1 ? "one quick answer" : `${n} quick answers`} make this sure`,
+    return { step, text: `Next: ${n === 1 ? "one quick answer makes" : `${n} quick answers make`} this sure`,
       pieces: numbers(asks.flatMap((a) => a.members)), key: asks[0]?.key ?? "home" };
   }
   if (step === "plan" || step === "fix" || step === "check") {
@@ -266,10 +266,106 @@ export function nextLine(room) {
     return { step, text: `${so_far}Next: ${what}${extra}`, pieces: numbers(g.members), key: g.key };
   }
   if (step === "safe") {
+    const next = room.suggest ? `the ${room.suggest.name} (${room.suggest.why})` : "check another room";
     const text = atRisk(room)
-      ? "Nothing I can test would make this safer. Ask me about it, or check another room."
-      : "Everything here holds. Next: check another room.";
+      ? `Nothing I can test would make this safer. Ask me about it, or next: ${next}.`
+      : `Everything here holds. Next: ${next}.`;
     return { step, text, pieces: [] };
   }
   return { step: null, text: "", pieces: [] };
+}
+
+// --- keeping it safe: reminders, the next room, the plan on paper ----------------------------------
+
+// A date (YYYY-MM-DD) n months on; the 31st of a shorter month is its last day
+export function addMonths(date, n) {
+  const [y, m, d] = date.split("-").map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10);
+}
+
+// When to look again (household.toml): the next milestone of each confirmed answer, then the strap check
+// everyone gets, soonest first
+export function reminders(home, catalog, today) {
+  const out = [];
+  if (home?.confirmed) {
+    for (const [q, c] of Object.entries(catalog || {})) {
+      const next = c?.options?.find((o) => o.key === home[q])?.next;
+      if (next) out.push({ title: c.label ? `${c.label}: look again` : "Look again", date: addMonths(today, next.months), say: next.say });
+    }
+  }
+  const r = catalog?.recheck;
+  if (r) out.push({ title: r.title, date: addMonths(today, r.months), say: r.say });
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// RFC 5545: text escaped (\ ; , and newlines), lines folded at 75 octets, CRLF between them
+const icsEscape = (t) => String(t).replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\r?\n/g, "\\n");
+function fold(line) {
+  const bytes = new TextEncoder().encode(line);
+  if (bytes.length <= 75) return line;
+  const out = [];
+  let cur = "", size = 0;
+  for (const ch of line) {
+    const n = new TextEncoder().encode(ch).length;
+    if (size + n > (out.length ? 74 : 75)) { // a continuation line starts with a space
+      out.push(cur);
+      cur = "";
+      size = 0;
+    }
+    cur += ch;
+    size += n;
+  }
+  out.push(cur);
+  return out.join("\r\n ");
+}
+
+// A calendar file with one all-day event per reminder, each with a reminder the morning before
+export function icsText(list, stamp) {
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Fall 0//Keep it safe//EN", "CALSCALE:GREGORIAN"];
+  list.forEach((r, i) => {
+    const day = r.date.replaceAll("-", "");
+    lines.push("BEGIN:VEVENT", `UID:${day}-${i}-${stamp}@fall-zero`, `DTSTAMP:${stamp}`, `DTSTART;VALUE=DATE:${day}`,
+      `SUMMARY:${icsEscape(`Fall 0: ${r.title}`)}`, `DESCRIPTION:${icsEscape(r.say)}`,
+      "BEGIN:VALARM", "ACTION:DISPLAY", "TRIGGER:-PT15H", `DESCRIPTION:${icsEscape(r.title)}`, "END:VALARM", "END:VEVENT");
+  });
+  lines.push("END:VCALENDAR");
+  return lines.map(fold).join("\r\n") + "\r\n";
+}
+
+// The room to check next (household.toml `rooms`): the first that fits this home and hasn't been checked
+export function nextRoom(home, catalog, checked) {
+  const names = checked.map((n) => String(n).toLowerCase());
+  const fits = (r) => !r.for || Object.entries(r.for).some(([q, keys]) => home?.confirmed && keys.includes(home[q]));
+  const seen = (r) => names.some((n) => r.match.some((w) => n.includes(w)));
+  return (catalog?.rooms || []).find((r) => fits(r) && !seen(r)) || null;
+}
+
+const html = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// The home's plan on paper, the written record: who's home, then each room with what it found, what's
+// done and what's left (what to buy, cost, time), and one shopping list for the home
+export function planHTML(recs, home, catalog, today) {
+  const ks = keysFor({ weights: home?.confirmed ? weightsFor(home, catalog) : null });
+  const shop = new Map();
+  let lo = 0, hi = 0, minutes = 0;
+  const rooms = recs.map((r) => {
+    const pieces = r.breakdown.pieces.map((p) => {
+      const s = worstOf(ks.map((k) => p.status[k]));
+      for (const t of p.todo || []) {
+        if (t.cost_usd) [lo, hi] = [lo + t.cost_usd[0], hi + t.cost_usd[1]];
+        minutes += t.minutes || 0;
+        if (t.count > 0 && t.item) shop.set(t.item, (shop.get(t.item) || 0) + t.count);
+      }
+      const todo = (p.todo || []).map((t) => `<li>${html(t.title)}${t.count > 0 ? ` — ${t.count} × ${html(t.item)}` : ""}${t.cost_usd ? `, ${costText(t)}` : ""}${t.minutes ? `, ${t.minutes} min` : ""}</li>`).join("");
+      const done = (p.done || []).map((t) => `<li class="done">✓ ${html(t)}</li>`).join("");
+      return `<div class="piece"><h3>${html(cap1(p.name))} <span class="${s}">${WORD[s]}</span></h3><ul>${done}${todo}</ul></div>`;
+    }).join("");
+    return `<section><h2>${html(cap1(r.name))}</h2><p class="when">Checked ${html(r.updated.slice(0, 10))}</p>${pieces}</section>`;
+  }).join("");
+  const items = [...shop].map(([item, qty]) => `<li>${qty} × ${html(item)}</li>`).join("");
+  const total = { cost_usd: [lo, hi], minutes };
+  return `<h1>Our home's tip-over plan</h1><p class="when">Made ${html(today)} with Fall 0 · a screening, not a certification</p>
+    ${items ? `<section><h2>To buy</h2><ul>${items}</ul><p>${costText(total)} · about ${timeText(total)}</p></section>` : ""}${rooms}`;
 }

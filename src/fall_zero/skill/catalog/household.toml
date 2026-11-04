@@ -105,3 +105,40 @@ key = "own"
 label = "Own"
 renter = false
 source = "Consumer Reports surveys 2018, 2021"
+
+# --- keeping it safe (docs/FLOW.md S7) ---------------------------------------------------------------
+# `recheck`: the reminder everyone gets, whoever is home. `rooms`: which room to check next once one is
+# done, in this order; `match` are the words a checked room's name would contain, and `for` limits a room
+# to homes with one of those answers (no `for`: every home).
+
+[recheck]
+months = 6
+title = "Check the straps"
+say = "Pull the top of each strapped piece gently: it shouldn't move. Re-strap anything that was moved, and check anything new before it goes against the wall."
+source = "CPSC Anchor It tip card for older adults (replace anchoring devices as needed); Consumer Reports surveys 2018 (new furniture with hardware is when people anchor)"
+
+[[rooms]]
+name = "child's bedroom"
+match = ["bedroom", "nursery", "kid", "child", "toddler", "baby"]
+for = { child = ["crawling", "climbing", "older_kids"] }
+why = "most tip-over deaths happen in bedrooms"
+source = "CPSC 2023 tip-over report (44% of deaths in bedrooms)"
+
+[[rooms]]
+name = "living room"
+match = ["living", "family", "lounge", "den", "tv"]
+why = "TVs are in about half of tip-over deaths"
+source = "CPSC 2023 tip-over report (47% of deaths involve a TV); McKenzie 2021 (5% finished the living room)"
+
+[[rooms]]
+name = "bedroom"
+match = ["bedroom"]
+for = { older = ["lives_here", "visits"] }
+why = "an older adult grabs the dresser for balance"
+source = "CPSC Anchor It tip card for older adults"
+
+[[rooms]]
+name = "kitchen"
+match = ["kitchen"]
+why = "a range can tip when someone stands on its open door"
+source = "UL 858 / ANSI Z21.1 range stability; CPSC range tip-over warnings"
