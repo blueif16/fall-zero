@@ -25,7 +25,7 @@ The four cards in `web/index.html` (`ol.flow`) each play one clip: `room`, `find
 - What each clip keeps: `CLIPS`.
 - What can be framed: `REGIONS`, given as (selector, first|last).
 
-Use generic selectors such as the first question or the first fix, because the model's output changes from run to run. If `CLIPS` cuts at a mark that `session()` never made, the tool exits and names it. A closed card shows the middle of its still unless the `<video>` in `index.html` sets `object-position` (room: `0 100%`, fix: `0 0`).
+Use generic selectors such as the first question or the first fix, because the model's output changes from run to run. If `CLIPS` cuts at a mark that `session()` never made, the tool exits and names it. Only the open card shows media: its clip at the full 16:10, with the `poster` still showing until the clip plays. Closed cards show only their colour, numeral and text.
 
 **A good re-record shows** (check every clip with `ffmpeg -i web/tutorial/X.mp4 -vf "fps=12/DURATION,scale=480:-1,tile=4x3" -frames:v 1 sheet.jpg`, then look at the sheet):
 - **room:** "Photo / video" is clicked, the photo attaches, the question is typed and sent, and the view glides up to the scan.
@@ -33,7 +33,7 @@ Use generic selectors such as the first question or the first fix, because the m
 - **watch:** one scenario plays, the other scenario's tab is clicked, and that scenario plays.
 - **fix:** "I did this" is clicked and the verdict turns green.
 - Each clip is ≤ ~13 s and ≤ ~500 KB.
-- On the page, hovering a card widens it and plays its clip while the others pause; with reduced motion nothing autoplays.
+- On the page, card 1 is open and playing on load. Hovering a card, the round ‹ › buttons and ←/→ open another card, which widens and plays while the rest pause and show no media. With reduced motion nothing autoplays.
 
 **Never:**
 - trim or edit the MP4s by hand (re-cut instead);

@@ -119,51 +119,69 @@ main {
 }
 #messages { max-width: 760px; margin: 0 auto; padding: 72px 0 16px; }
 
-.empty { max-width: 1040px; margin: 6vh auto 0; text-align: center; animation: rise .5s var(--ease) both; }
-.hero-logo { font-size: 88px; margin: 0 0 10px; letter-spacing: -.025em; }
-.empty .lede { color: var(--muted); margin: 0 auto 26px; max-width: 560px; }
+.empty { max-width: 1240px; margin: 4vh auto 0; text-align: center; animation: rise .5s var(--ease) both; }
+.hero-logo { font-size: 84px; margin: 0 0 8px; letter-spacing: -.025em; }
+.empty .lede { color: var(--muted); margin: 0 auto 24px; max-width: 560px; }
 .empty .lede b { color: var(--fg); font-weight: 600; }
 
-/* how to use it: four steps, each over a recording of the app doing it. One opens at a time (hover, focus
-   or tap): its column widens to half the row and its clip plays; the others narrow to their titles. Only
-   widths move, so nothing below shifts. The open column is exactly 16:10, the clips' shape. */
+/* how to use it: four step cards, one open at a time (card 1 to start). The open card takes half the row and
+   plays its recording, exactly 16:10 like the clips; the others show their step on a colored card. Hover, the
+   round arrows and the arrow keys move it; only widths move, so nothing around the row shifts. */
+.guide {
+  --glide: cubic-bezier(.32, .72, 0, 1); /* quick to start, long soft landing */
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px;
+}
+.step-arrow {
+  width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border-radius: 50%;
+  border: 1px solid var(--line); background: #fff; color: var(--fg); box-shadow: var(--shadow);
+  transition: transform .3s var(--glide), color .3s, opacity .3s, box-shadow .3s;
+}
+.step-arrow svg { width: 20px; height: 20px; stroke-width: 2.2; }
+.step-arrow:hover:not(:disabled) { transform: scale(1.07); color: var(--accent); }
+.step-arrow:disabled { opacity: .35; cursor: default; box-shadow: none; }
 .flow {
-  list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
-  container-type: inline-size; text-align: left; transition: grid-template-columns .55s var(--ease);
+  --mh: calc((100cqi - 36px) * .3125); /* the open card's recording: half the row, 16:10 */
+  list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  container-type: inline-size; text-align: left; transition: grid-template-columns .8s var(--glide);
 }
 .flow[data-open="0"] { grid-template-columns: 3fr 1fr 1fr 1fr; }
 .flow[data-open="1"] { grid-template-columns: 1fr 3fr 1fr 1fr; }
 .flow[data-open="2"] { grid-template-columns: 1fr 1fr 3fr 1fr; }
 .flow[data-open="3"] { grid-template-columns: 1fr 1fr 1fr 3fr; }
-.flow li {
-  min-width: 0; display: flex; flex-direction: column; overflow: hidden; cursor: pointer;
-  background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow);
-  transition: border-color .3s, box-shadow .3s;
+/* each step its own color: blue to start, amber for what's at risk, red for the fall, green for the fix */
+.flow > li:nth-child(1) { --c: #2563eb; --g: linear-gradient(165deg, #d6e4ff, #ecf2ff 55%, #f8faff); }
+.flow > li:nth-child(2) { --c: #b45309; --g: linear-gradient(165deg, #ffe2b8, #fff1dc 55%, #fffaf3); }
+.flow > li:nth-child(3) { --c: #dc2626; --g: linear-gradient(165deg, #ffd3d6, #ffe9eb 55%, #fff7f7); }
+.flow > li:nth-child(4) { --c: #15803d; --g: linear-gradient(165deg, #c4eed3, #e3f7ea 55%, #f4fcf7); }
+.flow > li {
+  position: relative; min-width: 0; height: calc(var(--mh) + 104px); overflow: hidden; cursor: pointer;
+  border: 1px solid rgba(16, 16, 24, .06); border-radius: 20px; background: var(--g); box-shadow: var(--shadow);
+  transition: box-shadow .6s var(--glide);
   animation: rise .5s var(--ease) both; animation-delay: calc(var(--i) * 90ms + 150ms);
 }
-.flow li:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.flow li.open { border-color: #bcd0fb; box-shadow: 0 1px 2px rgba(16, 16, 24, .06), 0 14px 36px rgba(37, 99, 235, .14); }
-.flow .fv { position: relative; height: calc((100cqi - 42px) * .3125); background: var(--soft); border-bottom: 1px solid var(--line); }
-.flow video { display: block; width: 100%; height: 100%; object-fit: cover; }
-/* a play mark on each still: there's a recording here */
-.flow .fv::after {
-  content: ""; position: absolute; right: 12px; top: 12px; width: 32px; height: 32px; border-radius: 50%; pointer-events: none;
-  background: rgba(255, 255, 255, .94) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4.5v15l12-7.5z' fill='%2316161a'/%3E%3C/svg%3E") 56% 50% / 13px no-repeat;
-  box-shadow: 0 1px 4px rgba(16, 16, 24, .2); transition: opacity .3s, transform .3s var(--ease);
+.flow > li:focus-visible { outline: 2px solid var(--c); outline-offset: 3px; }
+.flow > li.open { cursor: default; box-shadow: 0 2px 6px rgba(16, 16, 24, .06), 0 18px 44px rgba(16, 16, 24, .12); }
+.flow .fv { position: relative; height: var(--mh); }
+.flow .fn {
+  position: absolute; left: 18px; top: 8px; font: italic 400 112px/1 "Instrument Serif", Georgia, serif;
+  color: var(--c); opacity: .85; transition: opacity .35s var(--glide), transform .7s var(--glide);
 }
-.flow li.open .fv::after { opacity: 0; transform: scale(.8); }
-.flow .fc { display: flex; flex-direction: column; gap: 4px; height: 106px; padding: 12px 14px 14px; overflow: hidden; }
-.flow b { display: flex; align-items: flex-start; gap: 8px; font-size: 15px; font-weight: 650; line-height: 1.3; }
+.flow li.open .fn { opacity: 0; transform: translateY(-10px); }
+/* a closed card shows no recording, not even its still */
+.flow video {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; background: var(--soft);
+  opacity: 0; visibility: hidden; transition: opacity .4s var(--glide), visibility 0s .4s;
+}
+.flow li.open video { opacity: 1; visibility: visible; transition: opacity .6s var(--glide) .2s, visibility 0s; }
+.flow .fc { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 16px; }
+.flow b { display: flex; align-items: flex-start; gap: 8px; font-size: 16px; font-weight: 650; line-height: 1.3; }
 .flow b i {
-  flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--fg); color: #fff; font-size: 11.5px; font-weight: 700; font-style: normal; transition: background .3s;
+  flex: none; display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%;
+  background: var(--c); color: #fff; font-size: 12px; font-weight: 700; font-style: normal;
 }
-.flow li.open b i { background: var(--accent); }
-.flow small {
-  color: var(--muted); font-size: 13px; line-height: 1.4; transition: opacity .25s;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-}
-.flow[data-open] li:not(.open) small { opacity: 0; }
+.flow li:not(.open) b i { display: none; } /* the big numeral says it */
+.flow small { color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+.flow li.open small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .empty .why { color: var(--muted); font-size: 13px; margin: 20px auto 0; }
 
 /* sample rooms, right above the chat bar while the chat is empty */
@@ -463,13 +481,14 @@ textarea:placeholder-shown { white-space: nowrap; overflow: hidden; text-overflo
   .pick { padding: 9px; }
   .empty { margin-top: 10vh; }
   .hero-logo { font-size: 72px; }
-  /* two by two; the tapped card takes the whole row */
-  .flow, .flow[data-open] { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .flow li.open { grid-column: 1 / -1; }
-  .flow .fv { height: calc((100cqi - 10px) * .3); }
-  .flow li.open .fv { height: calc(100cqi * .625); }
-  .flow .fc { height: auto; padding: 10px 12px 12px; }
-  .flow li:not(.open) small { display: none; }
+  /* one card at a time, full width, with the arrows under it */
+  .guide { grid-template-columns: 1fr 1fr; gap: 12px 16px; }
+  .guide .flow { grid-column: 1 / -1; grid-row: 1; }
+  .step-prev { justify-self: end; }
+  .step-next { justify-self: start; }
+  .flow, .flow[data-open] { --mh: calc(100cqi * .625); grid-template-columns: 1fr; }
+  .flow > li { height: calc(var(--mh) + 112px); }
+  .flow > li:not(.open) { display: none; }
   .rail .logo { font-size: 21px; padding-left: 10px; }
   .hdel { opacity: 1; }
   .msg.user .bubble { max-width: 92%; }

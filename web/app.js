@@ -256,39 +256,68 @@ function resetChat() {
 function showEmpty(on) {
   els.empty.hidden = !on;
   els.tryone.hidden = !on;
-  if (!on) openStep(null);
+  playStep(); // the open step's recording runs only while it's on screen
 }
 
-// How to use it: one step card is open at a time (the mouse over it, keyboard focus, or a tap; a second tap
-// closes it). The open card widens and plays its recording from the start; with reduced motion it only shows
-// the still, with controls to play it.
+// How to use it: one step card is open at a time, card 1 to start. Resting the mouse on a card, the round
+// arrows and the arrow keys open another (the rest is a short pause on real movement, so sweeping across the
+// row doesn't flick through every card). The open card widens and plays its recording from the start; the
+// others show only their step. With reduced motion the open card shows its still, with controls to play it.
 const flow = document.querySelector(".flow");
+const steps = [...flow.children];
+const back = document.querySelector(".step-prev"), next = document.querySelector(".step-next");
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
+let openLi = null;
 function openStep(li) {
-  const was = flow.querySelector("li.open");
-  if (was === li) return;
-  if (was) {
-    was.classList.remove("open");
-    was.querySelector("video").pause();
-  }
-  if (!li) return delete flow.dataset.open;
+  if (!li || li === openLi) return;
+  openLi?.classList.remove("open");
+  openLi?.querySelector("video").pause();
+  openLi = li;
   li.classList.add("open");
-  flow.dataset.open = [...flow.children].indexOf(li);
-  const video = li.querySelector("video");
+  flow.dataset.open = steps.indexOf(li);
+  back.disabled = li === steps[0];
+  next.disabled = li === steps.at(-1);
+  playStep(true);
+}
+function playStep(fromStart = false) {
+  const video = openLi?.querySelector("video");
+  if (!video) return;
   video.controls = calm.matches;
-  if (calm.matches) return;
-  video.currentTime = 0;
+  if (calm.matches || els.empty.hidden) return video.pause();
+  if (fromStart) video.currentTime = 0;
   video.play().catch(() => {}); // a still is fine if the clip can't play
 }
-for (const li of flow.children) {
-  let tappedOpen = false;
-  li.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && openStep(li));
-  li.addEventListener("pointerdown", (e) => (tappedOpen = e.pointerType !== "mouse" && li.classList.contains("open")));
+const stepBy = (d) => steps[steps.indexOf(openLi) + d];
+let resting = null, restTimer;
+for (const li of steps) {
+  li.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse" || li === openLi || li === resting) return;
+    clearTimeout(restTimer);
+    resting = li;
+    restTimer = setTimeout(() => openStep(li), 120);
+  });
+  li.addEventListener("pointerleave", () => {
+    if (resting !== li) return;
+    clearTimeout(restTimer);
+    resting = null;
+  });
   li.addEventListener("focus", () => openStep(li));
-  li.addEventListener("click", () => openStep(tappedOpen ? null : li));
+  li.addEventListener("click", () => openStep(li));
 }
-flow.addEventListener("pointerleave", (e) => e.pointerType === "mouse" && openStep(null));
-flow.addEventListener("focusout", (e) => !flow.contains(e.relatedTarget) && !flow.matches(":hover") && openStep(null));
+back.onclick = () => openStep(stepBy(-1));
+next.onclick = () => openStep(stepBy(1));
+flow.parentElement.addEventListener("keydown", (e) => {
+  const li = stepBy({ ArrowLeft: -1, ArrowRight: 1 }[e.key]);
+  if (!li) return;
+  e.preventDefault();
+  openStep(li);
+  if (e.target.closest(".flow")) li.focus();
+});
+openStep(steps[0]);
+// once the first clip plays, fetch the rest, so opening another card doesn't wait on the network
+steps[0].querySelector("video").addEventListener("playing", () => {
+  for (const li of steps) li.querySelector("video").preload = "auto";
+}, { once: true });
 
 function newChat() {
   if (busy) return;
