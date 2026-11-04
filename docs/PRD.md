@@ -2,6 +2,8 @@
 
 *v0.1 · Oct 26, 2026 · Meta Global AI Developer Hackathon (10-day build)*
 
+*The flow as built (2026-11-04), from who's home to keeping it safe, is [FLOW.md](FLOW.md); why, [JOURNEY.md](JOURNEY.md).*
+
 > **View in Room tells you if it fits. Fall-Zero tells you if it falls.**
 
 ## 1. Problem
