@@ -130,15 +130,22 @@ export function stepOf(room) {
   return toDo(room).length ? "plan" : "safe";
 }
 
-const costTime = (g) => [g.f.how?.cost, g.f.how?.time].filter(Boolean).join(" · ");
+// What the room becomes with a fix done: everything holds, or how many of its pieces do
+function outcome(room, g) {
+  if (KEYS.every((k) => roomWith(room, k, g) === "holds")) return "then everything here holds";
+  const hold = room.pieces.filter((p) => KEYS.every((k) => statusWith(p, k, g) === "holds")).length;
+  return hold ? `then ${hold} of ${room.pieces.length} hold` : "";
+}
 const numbers = (members) => [...new Set(members.map((m) => (m.p ?? m).n))];
 
 // The one line the room card leads with: what to do next, never at odds with the card below it
 export function nextLine(room) {
   const step = stepOf(room);
-  if (step === "sure") {
-    const a = askGroups(room)[0];
-    return { step, text: `Next: ${a.q.title}`, pieces: numbers(a.members), key: a.key };
+  if (step === "sure") { // the questions are right below: say how many, not which
+    const asks = askGroups(room);
+    const n = asks.length;
+    return { step, text: `Next: ${n === 1 ? "one quick answer" : `${n} quick answers`} make this sure`,
+      pieces: numbers(asks.flatMap((a) => a.members)), key: asks[0].key };
   }
   if (step === "plan" || step === "fix" || step === "check") {
     const groups = counted(room);
@@ -146,7 +153,8 @@ export function nextLine(room) {
     const done = groups.filter((x) => x.done).length;
     const so_far = done ? `${done} of ${groups.length} done. ` : "";
     const what = step === "check" ? `check that ${fixTitle(g.f).toLowerCase()} holds` : g.title;
-    const extra = step === "plan" && costTime(g) ? ` · ${costTime(g)}` : "";
+    const then = step === "plan" ? outcome(room, g) : "";
+    const extra = then ? `, ${then}` : "";
     return { step, text: `${so_far}Next: ${what}${extra}`, pieces: numbers(g.members), key: g.key };
   }
   if (step === "safe") {

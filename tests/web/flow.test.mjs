@@ -64,10 +64,12 @@ test("at the plan, next counts the needed fixes done so far", () => {
   assert.match(nextLine(half).text, /1 of 2 done/);
 });
 
-test("at 'be sure', next asks the first question", () => {
-  const next = nextLine(room(card({ fixes: [strap(ALL("holds"))], questions: [floorQ] })));
+test("at 'be sure', next counts the questions left without repeating one (the card shows them)", () => {
+  const anchoredQ = { key: "anchored", title: "Is it already strapped to the wall?", options: [{ label: "Yes", value: "yes" }] };
+  const next = nextLine(room(card({ fixes: [strap(ALL("holds"))], questions: [floorQ, anchoredQ] })));
   assert.equal(next.step, "sure");
-  assert.match(next.text, /Which floor is this room on\?/);
+  assert.match(next.text, /2 quick answers/);
+  assert.doesNotMatch(next.text, /Which floor|strapped/);
 });
 
 test("a safe room's next says it holds and points at another room", () => {
@@ -94,4 +96,25 @@ test("with two helpful fixes, next names the one that makes the room safest", ()
   const next = nextLine(room(card({ fixes: [locks, strap(ALL("holds"))] })));
   assert.match(next.text, /Strap it to the wall/);
   assert.doesNotMatch(next.text, /Drawer locks/);
+});
+
+test("at the plan, next says what the room becomes after that fix, not its cost (the row shows that)", () => {
+  const next = nextLine(room(card({ fixes: [strap(ALL("holds"))] }), card({ name: "Bookcase", fixes: [strap(ALL("holds"))] })));
+  assert.match(next.text, /then everything here holds/);
+  assert.doesNotMatch(next.text, /\$|min/);
+});
+
+test("when one fix leaves part of the room at risk, next says how many pieces it makes hold", () => {
+  const partly = { ...strap(ALL("holds")), kind: "tv_strap", title: "Strap the TV" };
+  const next = nextLine(room(card({ fixes: [partly] }), card({ name: "Bookcase", fixes: [] })));
+  assert.match(next.text, /then 1 of 2 hold/);
+  assert.doesNotMatch(next.text, /everything/);
+});
+
+test("a fix that settles only one scenario claims neither the room nor a piece holds", () => {
+  const locks = { key: "locks", kind: "locks", title: "Drawer locks", answer: { locks: true }, done: false,
+    after: { child: "holds", adult: "tips", quake: "tips" }, how: {} };
+  const next = nextLine(room(card({ fixes: [locks] })));
+  assert.match(next.text, /Drawer locks/);
+  assert.doesNotMatch(next.text, /hold/);
 });
