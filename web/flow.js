@@ -106,3 +106,55 @@ export function bestScenario(g) {
   const best = KEYS.reduce((a, b) => (gain(b) > gain(a) ? b : a));
   return gain(best) > 0 ? best : null;
 }
+
+// --- where the room is in the flow, and the one thing to do next ---------------------------------
+
+// The steps of a check, in order. "find" is done once the verdicts are in; the rest follow from the cards.
+export const STEPS = ["find", "sure", "plan", "fix", "check", "safe"];
+
+// The fixes still to do that would make a piece safer, in the to-do order
+const toDo = (room) => todo(room).filter((g) => g.act && !g.done && g.lift > 0);
+
+// The fixes that count toward "n of m done": done ones that changed the physics, and the ones still to do
+const counted = (room) => todo(room).filter((g) => g.act && (g.done ? g.members.some((m) => m.f.after) : g.lift > 0));
+
+const atRisk = (room) => Object.values(roomNow(room)).some((s) => s !== "holds");
+
+// Being sure while a question could still change a verdict (every unanswered question assumes the worst,
+// so a room that holds everywhere has nothing left to learn), then the plan while a fix would make a piece
+// safer, else safe. Fixing and checking are where the person has taken the room.
+export function stepOf(room) {
+  if (!room.pieces.length) return null;
+  if (room.checking) return "check";
+  if (room.fixing) return "fix";
+  if (!room.skipAsks && atRisk(room) && askGroups(room).length) return "sure";
+  return toDo(room).length ? "plan" : "safe";
+}
+
+const costTime = (g) => [g.f.how?.cost, g.f.how?.time].filter(Boolean).join(" · ");
+const numbers = (members) => [...new Set(members.map((m) => (m.p ?? m).n))];
+
+// The one line the room card leads with: what to do next, never at odds with the card below it
+export function nextLine(room) {
+  const step = stepOf(room);
+  if (step === "sure") {
+    const a = askGroups(room)[0];
+    return { step, text: `Next: ${a.q.title}`, pieces: numbers(a.members), key: a.key };
+  }
+  if (step === "plan" || step === "fix" || step === "check") {
+    const groups = counted(room);
+    const g = (step === "plan" ? null : groups.find((x) => x.key === (room.checking || room.fixing))) || toDo(room)[0];
+    const done = groups.filter((x) => x.done).length;
+    const so_far = done ? `${done} of ${groups.length} done. ` : "";
+    const what = step === "check" ? `check that ${fixTitle(g.f).toLowerCase()} holds` : g.title;
+    const extra = step === "plan" && costTime(g) ? ` · ${costTime(g)}` : "";
+    return { step, text: `${so_far}Next: ${what}${extra}`, pieces: numbers(g.members), key: g.key };
+  }
+  if (step === "safe") {
+    const text = atRisk(room)
+      ? "Nothing I can test would make this safer. Ask me about it, or check another room."
+      : "Everything here holds. Next: check another room.";
+    return { step, text, pieces: [] };
+  }
+  return { step: null, text: "", pieces: [] };
+}
