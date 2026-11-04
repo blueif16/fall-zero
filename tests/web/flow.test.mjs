@@ -1,7 +1,7 @@
 // The flow's rules (web/flow.js) on small hand-built rooms: run with `node --test tests/web/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stepOf, nextLine, costText, timeText } from "../../web/flow.js";
+import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups } from "../../web/flow.js";
 
 const ALL = (s) => ({ child: s, adult: s, quake: s });
 const risks = (r) => Object.fromEntries(Object.entries(r).map(([k, status]) => [k, { status, says: "" }]));
@@ -130,4 +130,62 @@ test("a chat saved before the numbers keeps its cost and time words", () => {
   assert.equal(costText({ cost: "$10–20 a set" }), "$10–20 a set");
   assert.equal(timeText({ time: "20 min" }), "20 min");
   assert.equal(costText(undefined), "");
+});
+
+// fixes as they come from the catalog now: numbers for the shopping list
+const strapN = (after, done = false) => ({ ...strap(after, done),
+  how: { item: "Anti-tip straps, metal or nylon", count: 2, cost_usd: [10, 25], minutes: 15 } });
+const tvN = (after) => ({ key: "tv", kind: "tv_strap", title: "Strap the TV", answer: { tv: true }, done: false, after,
+  how: { item: "TV anti-tip strap kit", count: 1, cost_usd: [10, 20], minutes: 15 } });
+const moveN = { ...move, how: { item: "", count: 0, cost_usd: [0, 0], minutes: 5 } };
+
+test("the shopping list merges one item across pieces: its count per piece times the pieces", () => {
+  const list = shoppingList(room(card({ fixes: [strapN(ALL("holds"))] }), card({ name: "Bookcase", fixes: [strapN(ALL("holds"))] })));
+  assert.deepEqual(list.items, [{ item: "Anti-tip straps, metal or nylon", qty: 4, pieces: [1, 2] }]);
+});
+
+test("the shopping list totals the cost and time of every fix still to do, free ones included", () => {
+  const list = shoppingList(room(card({ fixes: [strapN(ALL("holds")), moveN, tvN(ALL("holds"))] })));
+  assert.deepEqual(list.cost_usd, [20, 45]);
+  assert.equal(list.minutes, 35);
+  assert.equal(list.items.length, 2);
+});
+
+test("the shopping list leaves out what's done", () => {
+  const list = shoppingList(room(card({ now: ALL("holds"), fixes: [strapN(ALL("holds"), true)] }), card({ name: "TV", fixes: [tvN(ALL("holds"))] })));
+  assert.deepEqual(list.items.map((x) => x.item), ["TV anti-tip strap kit"]);
+  assert.deepEqual(list.cost_usd, [10, 20]);
+});
+
+test("with every fix done, the room holds if each piece's best fix holds it", () => {
+  assert.equal(planOutcome(room(card({ fixes: [strapN(ALL("holds")), moveN] }), card({ name: "TV", fixes: [tvN(ALL("holds"))] }))),
+    "everything here holds");
+});
+
+test("two fixes on one piece count as at least the better of the two, per scenario", () => {
+  const childOnly = { ...tvN({ child: "holds", adult: "tips", quake: "tips" }), kind: "locks", key: "locks" };
+  const quakeOnly = { ...tvN({ child: "tips", adult: "holds", quake: "holds" }), kind: "latches", key: "latches" };
+  assert.equal(planOutcome(room(card({ fixes: [childOnly, quakeOnly] }))), "everything here holds");
+  assert.equal(planOutcome(room(card({ fixes: [childOnly] }))), "");
+});
+
+test("when the plan can't make every piece hold, it says how many it does", () => {
+  assert.equal(planOutcome(room(card({ fixes: [strapN(ALL("holds"))] }), card({ name: "Lamp", now: ALL("maybe"), fixes: [moveN] }))),
+    "1 of 2 hold");
+});
+
+test("a to-do row's cost and time cover every piece it's for, so the rows add up to the shopping line", () => {
+  const r = room(card({ fixes: [strapN(ALL("holds")), moveN] }), card({ name: "Bookcase", fixes: [strapN(ALL("holds"))] }));
+  const rows = fixGroups(r).map(rowHow);
+  assert.deepEqual(rows.map((h) => h.cost_usd), [[20, 50], [0, 0]]);
+  assert.deepEqual(rows.map((h) => h.minutes), [30, 5]);
+  const list = shoppingList(r);
+  assert.equal(rows.reduce((n, h) => n + h.minutes, 0), list.minutes);
+});
+
+test("a row from a chat saved before the numbers shows its words as they were", () => {
+  const old = { ...strap(ALL("holds")), how: { cost: "$10–25", time: "15 min" } };
+  const h = rowHow(fixGroups(room(card({ fixes: [old] }), card({ name: "B", fixes: [old] })))[0]);
+  assert.equal(costText(h), "$10–25");
+  assert.equal(timeText(h), "15 min");
 });
