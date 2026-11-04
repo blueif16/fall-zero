@@ -53,6 +53,7 @@ uv run fall-zero smoke meta-image meta-sam sam3d               # image -> mask -
 | `uv run pytest` | Physics tests (MuJoCo agrees with the statics, pull test within ±10%) and card tests |
 | `uv run fall-zero smoke [checks...]` | Health check. Checks: `meta-spark meta-wonder meta-image meta-vision meta-search-json meta-sam meta-voice-file meta-voice-realtime baseten fireworks modal glimmer sam3d mujoco` |
 | `uv run ruff check . && uv run ruff format .` | Lint and format |
+| `uv run tools/tutorial.py [--cut-only]` | Re-record the front page's how-to clips (`web/tutorial/`) from one live check in Chrome, with the app running. Edit `session()` for what gets pressed, `CLIPS` for what each clip keeps |
 
 ## Deploying
 

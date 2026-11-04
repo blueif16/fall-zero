@@ -9,3 +9,4 @@ modal_apps
 .pytest_cache
 .ruff_cache
 .claude
+tools
