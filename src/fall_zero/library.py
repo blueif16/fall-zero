@@ -1,0 +1,228 @@
+"""The room library: Fall 0's memory of a home (docs/FLOW.md S6).
+
+Every checked room is kept as a record: its photo, its pieces (with ids that stay the same from one
+check to the next), what was answered and done, and a breakdown of what was found, piece by piece, with
+a dated snapshot of the breakdown for each check. A new photo of a known room matches its pieces to the
+record's, carries over what is still true (it's strapped, what's in the drawers, the floor), and says
+what changed since: pieces new, gone or moved, things put on or taken off, verdicts better or worse,
+fixes still in place.
+
+Records live in the store under homes/<owner>/ (homes/local/ when running locally).
+"""
+
+import json
+import re
+import uuid
+from datetime import UTC, datetime
+
+from fall_zero import store
+from fall_zero.assess import CARD_STATUSES, JUDGED_KINDS, RISK_KEYS, judged_icon
+
+RANK = {"holds": 0, "maybe": 1, "tips": 2}
+CARRY = ("anchored", "locks", "drawers", "depth", "material", "measured")  # what stays true of a piece
+ROOM_WIDE = ("floor",)  # what is true of the whole room
+HURTS = ("danger", "caution")  # what would hurt someone if it fell
+STOP = {"the", "a", "an", "by", "on", "of", "with", "in", "and", "to", "under", "next", "near"}
+
+
+def folder(owner: str) -> str:
+    """Locally the home is yours; deployed, each browser's (X-Owner) is its own."""
+    if not store.REMOTE:
+        return "homes/local/"
+    if not re.fullmatch(r"[0-9a-f]{32}", owner):
+        raise ValueError("no owner")
+    return f"homes/{owner}/"
+
+
+def entries(report: dict) -> list[dict]:
+    """The report's pieces that have a card, in the cards' order."""
+    return [e for e in report["pieces"] if e["status"] in CARD_STATUSES]
+
+
+def _x(entry: dict, width: float) -> float | None:
+    box = entry.get("box")
+    return round((box[0] + box[2]) / 2 / width, 3) if box else None
+
+
+def _words(*texts: str) -> set[str]:
+    return {w for t in texts for w in re.findall(r"[a-z0-9]+", (t or "").lower()) if w not in STOP}
+
+
+def _worst(statuses) -> str:
+    return max(statuses, key=RANK.__getitem__, default="holds")
+
+
+# --- a check of a room, as a record ------------------------------------------------------------------
+
+
+def breakdown(report: dict, cards: list[dict], pieces: list[dict], now: str) -> dict:
+    """What this check found, piece by piece: the verdict per scenario and why, what would fall from it,
+    what stands on it, where it stands, the fixes done and the questions still open."""
+    out = []
+    for p, c in zip(pieces, cards, strict=True):
+        items = [it.get("short") or it.get("name") or "" for it in c.get("items", [])]
+        out.append({
+            "id": p["id"], "name": c["name"], "family": p["family"], "x": p["x"],
+            "status": {k: c["risks"][k]["status"] for k in RISK_KEYS},
+            "why": {k: c["risks"][k].get("says", "") for k in RISK_KEYS},
+            "falls": [n for n, it in zip(items, c.get("items", []), strict=True) if it.get("level") in HURTS],
+            "items": items,
+            "done": [f["title"] for f in c["fixes"] if f.get("done")],
+            "open": [q["title"] for q in c["questions"]],
+        })  # fmt: skip
+    status = {k: _worst(p["status"][k] for p in out) for k in RISK_KEYS}
+    return {"date": now, "room": report.get("room") or "room", "status": status, "pieces": out}
+
+
+def record(report: dict, cards: list[dict], run: str, previous: dict | None = None, ids: dict | None = None,
+           extras: dict | None = None, thread: str | None = None, now: str | None = None) -> dict:  # fmt: skip
+    """The room as this check leaves it. `previous` is the room's record when it was recognized, `ids`
+    which of its pieces each card is (card index -> piece id), `extras` what only the page knows (when
+    each fix was checked)."""
+    now = now or datetime.now(UTC).isoformat()
+    ids = dict(ids or {})
+    width = report["size"][0]
+    checked = (extras or {}).get("checked", {})
+    pieces = []
+    for i, (e, c) in enumerate(zip(entries(report), cards, strict=True)):
+        pid = ids.get(i) or f"p{uuid.uuid4().hex[:8]}"
+        pieces.append({
+            "id": pid, "name": c["name"], "family": e["piece"].get("family", ""), "x": _x(e, width),
+            "box": e.get("box"), "answers": c.get("answers", {}),
+            "done": [f["kind"] for f in c["fixes"] if f.get("done") and f.get("kind")],
+            "checked": checked.get(str(i), checked.get(i, {})),
+        })  # fmt: skip
+    bd = breakdown(report, cards, pieces, now)
+    before = (previous or {}).get("history", [])
+    return {
+        "id": (previous or {}).get("id") or uuid.uuid4().hex[:12],
+        "name": report.get("room") or "room",
+        "created": (previous or {}).get("created", now),
+        "updated": now,
+        "run": run,
+        "thread": thread or (previous or {}).get("thread"),
+        "still": report.get("still"),
+        "size": report["size"],
+        "pieces": pieces,
+        "breakdown": bd,
+        "history": [h for h in before if h["run"] != run] + [{"run": run, "date": now, "breakdown": bd}],
+    }
+
+
+# --- a new photo of a known room ---------------------------------------------------------------------
+
+
+def match_pieces(previous: dict, report: dict) -> dict[int, str]:
+    """Which of the record's pieces each card of a new photo is: the same kind of thing (its family, or
+    most of its name) in about the same place. Card index -> piece id; a piece with no match is new."""
+    width = report["size"][0]
+    pairs = []
+    for i, e in enumerate(entries(report)):
+        fam, name, x = _words(e["piece"].get("family", "")), _words(e["piece"]["name"]), _x(e, width)
+        for old in previous["pieces"]:
+            same_family = bool(fam & _words(old["family"]))
+            ow = _words(old["name"])
+            alike = len(name & ow) / len(name | ow) if name | ow else 0
+            if not (same_family or alike >= 0.34):
+                continue
+            near = 1 - abs(x - old["x"]) if x is not None and old["x"] is not None else 0.5
+            pairs.append((2 * same_family + alike + 0.5 * near, i, old["id"]))
+    out: dict[int, str] = {}
+    for _, i, pid in sorted(pairs, reverse=True):
+        if i not in out and pid not in out.values():
+            out[i] = pid
+    return dict(sorted(out.items()))
+
+
+def carry(previous: dict, ids: dict[int, str], report: dict) -> dict[int, dict]:
+    """The answers to start each card of the new photo with: what's still true of its piece (strapped,
+    what's in the drawers, its measured size) and of the room (the floor). A judged piece keeps its done
+    fixes by kind, since the judge numbers them afresh each time. What named one photo's things (which
+    items were moved) doesn't carry."""
+    by_id = {p["id"]: p for p in previous["pieces"]}
+    room = {k: v for p in previous["pieces"] for k, v in p["answers"].items() if k in ROOM_WIDE}
+    out = {}
+    for i, e in enumerate(entries(report)):
+        answers = dict(room)
+        old = by_id.get(ids.get(i))
+        if old:
+            answers |= {k: v for k, v in old["answers"].items() if k in CARRY}
+            if e["status"] == "judged":
+                for j, f in enumerate(e["judgment"]["fixes"]):
+                    if JUDGED_KINDS.get(judged_icon(f)) in old["done"]:
+                        answers[f"fix_{j}"] = True
+        if answers:
+            out[i] = answers
+    return out
+
+
+def changes(before: dict, after: dict) -> list[dict]:
+    """What changed between two breakdowns of a room: pieces new, gone or moved (their order along the
+    wall changed), things put on or taken off a piece, verdicts worse or better (with the scenarios, so
+    the page shows only those that count for the home), and fixes still in place."""
+    old, new = {p["id"]: p for p in before["pieces"]}, {p["id"]: p for p in after["pieces"]}
+    out = []
+
+    def say(kind, p, text, **more):
+        out.append({"kind": kind, "id": p["id"], "name": p["name"], "text": text} | more)
+
+    for p in after["pieces"]:
+        if p["id"] not in old:
+            say("new", p, f"New: {p['name']}")
+    for p in before["pieces"]:
+        if p["id"] not in new:
+            say("gone", p, f"Gone: {p['name']}")
+    common = [pid for pid in new if pid in old]
+
+    def order(side):
+        placed = sorted((side[pid]["x"], pid) for pid in common if side[pid]["x"] is not None)
+        return {pid: rank for rank, (_, pid) in enumerate(placed)}
+
+    was, now = order(old), order(new)
+    for pid in common:
+        o, n = old[pid], new[pid]
+        if pid in was and pid in now and was[pid] != now[pid]:
+            say("moved", n, f"Moved: {n['name']}")
+        worse = [k for k in RISK_KEYS if RANK[n["status"][k]] > RANK[o["status"][k]]]
+        better = [k for k in RISK_KEYS if RANK[n["status"][k]] < RANK[o["status"][k]]]
+        if worse:
+            say("worse", n, f"{n['name']} can fall now", scenarios=worse)
+        if better:
+            say("better", n, f"{n['name']} holds better", scenarios=better)
+        for item in [i for i in n["items"] if i not in o["items"]]:
+            say("added", n, f"New on {n['name']}: {item}", item=item, hurts=item in n["falls"])
+        for item in [i for i in o["items"] if i not in n["items"]]:
+            say("removed", n, f"Off {n['name']}: {item}", item=item)
+        for fix in [f for f in o["done"] if f in n["done"]]:
+            say("kept", n, f"Still in place: {fix.lower()} ({n['name']})", fix=fix)
+    return out
+
+
+# --- the library in the store ------------------------------------------------------------------------
+
+
+def _room_name(owner: str, rid: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{12}", rid):
+        raise ValueError("unknown room")
+    return f"{folder(owner)}rooms/{rid}.json"
+
+
+def save(owner: str, rec: dict) -> dict:
+    store.write(_room_name(owner, rec["id"]), json.dumps(rec).encode())
+    return rec
+
+
+def get(owner: str, rid: str) -> dict | None:
+    body = store.read(_room_name(owner, rid))
+    return json.loads(body) if body else None
+
+
+def remove(owner: str, rid: str) -> None:
+    store.delete(_room_name(owner, rid))
+
+
+def rooms(owner: str) -> list[dict]:
+    """Every room in the home, newest check first, as the full records."""
+    names = [n for n in store.names(f"{folder(owner)}rooms/") if n.endswith(".json")]
+    found = [json.loads(body) for n in names if (body := store.read(n))]
+    return sorted(found, key=lambda r: r["updated"], reverse=True)
