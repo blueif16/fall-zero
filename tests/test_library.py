@@ -23,11 +23,17 @@ def strap(done=False):
 
 
 def card(name, now=TIPS, fixes=(), questions=(), items=(), answers=None):
-    return {"name": name, "risks": {k: {"status": s, "says": f"{k}: {s}"} for k, s in now.items()},
-            "fixes": list(fixes), "questions": list(questions), "items": list(items), "answers": answers or {}}  # fmt: skip
+    risks = {k: {"status": s, "says": f"{k}: {s}"} for k, s in now.items()}
+    return {"name": name, "risks": risks, "fixes": list(fixes), "questions": list(questions), "items": list(items),
+            "answers": answers or {}}  # fmt: skip
 
 
-LIVING = report(("tall white bookcase", "bookcase", 0.2), ("low TV stand", "TV stand", 0.5), ("floor mirror", "mirror", 0.8))
+BOOK, STAND, MIRROR = (
+    ("tall white bookcase", "bookcase", 0.2),
+    ("low TV stand", "TV stand", 0.5),
+    ("floor mirror", "mirror", 0.8),
+)
+LIVING = report(BOOK, STAND, MIRROR)
 
 
 @pytest.fixture
@@ -81,8 +87,11 @@ def test_each_browser_keeps_its_own_home_when_deployed(monkeypatch):
 def test_the_pieces_of_a_new_photo_are_matched_by_name_and_place():
     before = library.record(LIVING, [card("tall white bookcase"), card("low TV stand"), card("floor mirror")], run="r1")
     ids = {p["name"]: p["id"] for p in before["pieces"]}
-    now = report(("light wood TV stand", "TV stand", 0.45), ("white bookcase", "bookcase", 0.25), ("toy chest", "chest", 0.9))
-    assert library.match_pieces(before, now) == {0: ids["low TV stand"], 1: ids["tall white bookcase"]}  # the chest is new
+    now = report(
+        ("light wood TV stand", "TV stand", 0.45), ("white bookcase", "bookcase", 0.25), ("toy chest", "chest", 0.9)
+    )
+    # the chest is new
+    assert library.match_pieces(before, now) == {0: ids["low TV stand"], 1: ids["tall white bookcase"]}
 
 
 def test_what_was_answered_and_done_carries_over_but_not_what_belongs_to_one_photo():
@@ -96,8 +105,15 @@ def test_what_was_answered_and_done_carries_over_but_not_what_belongs_to_one_pho
 
 
 def test_a_judged_piece_keeps_its_done_fix_by_kind():
-    mirror = card("floor mirror", CALM, [{"key": "fix_0", "kind": "strap", "title": "Strap it", "answer": {"fix_0": True},
-                                          "done": True, "after": CALM}], answers={"fix_0": True})  # fmt: skip
+    tied = {
+        "key": "fix_0",
+        "kind": "strap",
+        "title": "Strap it",
+        "answer": {"fix_0": True},
+        "done": True,
+        "after": CALM,
+    }
+    mirror = card("floor mirror", CALM, [tied], answers={"fix_0": True})
     before = library.record(report(("floor mirror", "mirror", 0.5)), [mirror], run="r1")
     now = report(("tall floor mirror", "mirror", 0.5))
     now["pieces"][0] |= {"status": "judged", "judgment": {"fixes": [{"icon": "distance"}, {"icon": "strap"}]}}
@@ -108,10 +124,13 @@ def test_what_changed_since_last_time():
     before = library.record(LIVING, [card("tall white bookcase", CALM, [strap(done=True)]),
                                      card("low TV stand", CALM), card("floor mirror")], run="r1")  # fmt: skip
     ids = {p["name"]: p["id"] for p in before["pieces"]}
-    now = report(("low TV stand", "TV stand", 0.15), ("tall white bookcase", "bookcase", 0.5), ("toy chest", "chest", 0.9))
-    after = library.record(now, [card("low TV stand", TIPS, items=[{"short": "TV", "level": "danger"}]),
-                                 card("tall white bookcase", CALM, [strap(done=True)]), card("toy chest")],
-                           run="r2", previous=before, ids={0: ids["low TV stand"], 1: ids["tall white bookcase"]})  # fmt: skip
+    now = report(
+        ("low TV stand", "TV stand", 0.15), ("tall white bookcase", "bookcase", 0.5), ("toy chest", "chest", 0.9)
+    )
+    cards = [card("low TV stand", TIPS, items=[{"short": "TV", "level": "danger"}]),
+             card("tall white bookcase", CALM, [strap(done=True)]), card("toy chest")]  # fmt: skip
+    ids_now = {0: ids["low TV stand"], 1: ids["tall white bookcase"]}
+    after = library.record(now, cards, run="r2", previous=before, ids=ids_now)
     kinds = {(c["kind"], c["name"]) for c in library.changes(before["breakdown"], after["breakdown"])}
     assert ("new", "toy chest") in kinds and ("gone", "floor mirror") in kinds
     assert ("moved", "low TV stand") in kinds and ("worse", "low TV stand") in kinds
