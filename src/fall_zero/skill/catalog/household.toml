@@ -1,0 +1,107 @@
+# Who's home: the chips at the top of "Help me be sure" (docs/FLOW.md S5). The survey guesses `child` and
+# `older` from the photo (cribs and toys, a walking frame); `quake` and `rent` can't be seen, so they start
+# unknown and the page asks. The person confirms it once for the home.
+#
+# Each option: `label` (the chip), `scenarios` (what this answer makes of a scenario: "primary" counts in
+# full, "later" counts too and is tagged "soon", "none" leaves it out of the verdicts and dims it; a
+# scenario an answer doesn't name stays "primary"), `renter` (renter options lead in Fix it), and `next`
+# (when to look again: `months` from now and what to say, for the reminders in S7).
+#
+# Sources: CDC "Learn the Signs. Act Early." milestone checklists (2022): by 12 months a baby pulls up to
+# stand and walks holding on to furniture; by 18 months climbs on and off a couch or chair without help.
+# CPSC 2023 tip-over report: 55% of tip-over deaths are children aged 1-3, mostly climbing; adults 60+ are
+# 26% of deaths and pull furniture over grabbing it for balance. Tokyo Fire Department: upper floors move
+# furniture more in an earthquake.
+
+[child]
+label = "Kids"
+ask = "Who's at home?"
+
+[[child.options]]
+key = "crawling"
+label = "Baby, not walking yet"
+scenarios = { child = "later" }
+next = { months = 4, say = "Babies pull up on furniture by about 12 months: check the drawers and shelves again before then." }
+source = "CDC milestone checklists 2022 (12 months: pulls up to stand, walks holding on to furniture)"
+
+[[child.options]]
+key = "climbing"
+label = "Toddler, 1–3"
+scenarios = { child = "primary" }
+next = { months = 6, say = "Climbers reach higher every month: check the room again, and anything new on top." }
+source = "CPSC 2023 tip-over report (55% of deaths aged 1-3, most climbing); CDC milestone checklists 2022 (18 months: climbs on and off a couch)"
+
+[[child.options]]
+key = "older_kids"
+label = "Kids 4 and up"
+scenarios = { child = "primary" }
+next = { months = 12, say = "Check again once a year, and whenever a TV or heavy piece moves." }
+source = "CPSC 2023 tip-over report"
+
+[[child.options]]
+key = "none"
+label = "No kids"
+scenarios = { child = "none" }
+next = { months = 12, say = "Check again before children visit or move in." }
+source = "CPSC 2023 tip-over report"
+
+[older]
+label = "Older adult"
+ask = "An older adult?"
+
+[[older.options]]
+key = "lives_here"
+label = "Lives here"
+scenarios = { adult = "primary" }
+next = { months = 6, say = "Check the pieces they lean on again, and that everyday things are still within reach." }
+source = "CPSC Anchor It tip card for older adults; CPSC 2023 tip-over report (adults 60+: 26% of deaths)"
+
+[[older.options]]
+key = "visits"
+label = "Visits"
+scenarios = { adult = "later" }
+source = "CPSC Anchor It tip card for older adults"
+
+[[older.options]]
+key = "no"
+label = "No"
+scenarios = { adult = "none" }
+source = "CPSC 2023 tip-over report"
+
+[quake]
+label = "Earthquakes"
+ask = "Earthquakes where you live?"
+
+[[quake.options]]
+key = "yes"
+label = "Yes"
+scenarios = { quake = "primary" }
+source = "Tokyo Fire Department (furniture causes 30-50% of earthquake injuries)"
+
+[[quake.options]]
+key = "no"
+label = "No"
+scenarios = { quake = "none" }
+source = "USGS seismic hazard maps"
+
+[[quake.options]]
+key = "unsure"
+label = "Not sure"
+scenarios = { quake = "primary" }
+source = "USGS seismic hazard maps"
+
+[rent]
+label = "Home"
+ask = "Do you rent?"
+
+[[rent.options]]
+key = "rent"
+label = "Rent"
+renter = true
+source = "Consumer Reports surveys 2018, 2021 (no holes in the wall: 25-29% of non-anchorers)"
+
+[[rent.options]]
+key = "own"
+label = "Own"
+renter = false
+source = "Consumer Reports surveys 2018, 2021"

@@ -420,6 +420,20 @@ main {
 .plan-end.holds { background: var(--holds-bg); color: var(--holds); }
 .plan-end.tips { background: var(--tips-bg); color: var(--tips); }
 
+/* who's home: one card of chips at the top of "Help me be sure"; a scenario not for this home is dimmed */
+.q.home { grid-column: 1 / -1; border-color: #bcd0fb; background: #f5f8ff; gap: 10px; }
+.q.home .qt svg { width: 18px; height: 18px; color: var(--accent); flex: none; margin-top: 1px; }
+.homerow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; }
+.homerow > span { font-size: 13.5px; font-weight: 600; color: #3b3b44; min-width: 150px; }
+.homerow .opts { margin-top: 0; }
+.q.home > .go { align-self: flex-start; display: flex; align-items: center; gap: 6px; }
+.q.home > .go svg { width: 16px; height: 16px; stroke-width: 2.4; }
+.gs.off, .p-tab.off { opacity: .4; filter: grayscale(1); }
+.gs.later { box-shadow: inset 0 0 0 1.5px var(--rc); }
+.p-tab .soon { font-style: normal; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--soft-2); color: var(--muted); }
+.hl.renter svg { color: var(--accent); }
+.fixing > .hl.renter { background: #f5f8ff; border-radius: 12px; padding: 8px 10px; }
+
 /* fixing one fix, step by step, and checking it; what to do when stuck; handing it to someone */
 .fixing, .checking { display: flex; flex-direction: column; gap: 10px; }
 .fhead { display: flex; align-items: center; gap: 10px; }

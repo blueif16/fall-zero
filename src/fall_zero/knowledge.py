@@ -60,6 +60,9 @@ ExampleName = Literal[(*examples(), "none")]  # type: ignore[valid-type]
 # the fixes catalog's ways of holding a piece down (`anchors = true`): a strap, a range's bracket, a TV strap
 AnchorName = Literal[tuple(k for k, v in catalog("fixes").items() if v.get("anchors"))]  # type: ignore[valid-type]
 Status = Literal["tips", "maybe", "holds"]
+# who the photo suggests is at home (catalog/household.toml); the rest the person tells the page
+ChildGuess = Literal[(*(o["key"] for o in catalog("household")["child"]["options"]), "unknown")]  # type: ignore[valid-type]
+OlderGuess = Literal[(*(o["key"] for o in catalog("household")["older"]["options"]), "unknown")]  # type: ignore[valid-type]
 # the fix icons the page draws
 Icon = Literal["strap", "lock", "top", "distance", "tv", "toy", "weight", "hand", "latch", "search"]
 
@@ -86,6 +89,8 @@ class Survey(BaseModel):
     room: str
     people: str
     pieces: list[Spotted]
+    child: ChildGuess = "unknown"
+    older: OlderGuess = "unknown"
 
 
 def survey(image: Path) -> Survey:

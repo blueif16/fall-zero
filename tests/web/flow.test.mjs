@@ -1,7 +1,7 @@
 // The flow's rules (web/flow.js) on small hand-built rooms: run with `node --test tests/web/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith } from "../../web/flow.js";
+import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith, weightsFor, keysFor, statusOf, askGroups } from "../../web/flow.js";
 
 const ALL = (s) => ({ child: s, adult: s, quake: s });
 const risks = (r) => Object.fromEntries(Object.entries(r).map(([k, status]) => [k, { status, says: "" }]));
@@ -245,4 +245,58 @@ test("after a failed check, the stuck options about it moving come first", () =>
   const g = fixGroups(room(card({ fixes: [{ ...strapN(ALL("holds")), how: { stuck } }] })))[0];
   assert.deepEqual(stuckOptions(g).map((o) => o.key), ["renting", "wont_stay"]);
   assert.deepEqual(stuckOptions(g, true).map((o) => o.key), ["wont_stay", "renting"]);
+});
+
+// --- who's home -----------------------------------------------------------------------------------
+const HOUSEHOLD = {
+  child: { options: [{ key: "crawling", scenarios: { child: "later" } }, { key: "climbing", scenarios: { child: "primary" } }, { key: "none", scenarios: { child: "none" } }] },
+  older: { options: [{ key: "lives_here", scenarios: { adult: "primary" } }, { key: "no", scenarios: { adult: "none" } }] },
+  quake: { options: [{ key: "yes", scenarios: { quake: "primary" } }, { key: "no", scenarios: { quake: "none" } }] },
+  rent: { options: [{ key: "rent", renter: true }] },
+};
+
+test("who's home decides what each scenario counts for; what isn't answered counts in full", () => {
+  assert.deepEqual(weightsFor({ child: "crawling", older: "no" }, HOUSEHOLD), { child: "later", adult: "none", quake: "primary" });
+  assert.deepEqual(weightsFor({}, HOUSEHOLD), { child: "primary", adult: "primary", quake: "primary" });
+});
+
+test("a scenario that isn't for this home leaves the verdicts; 'later' still counts", () => {
+  const r = room(card({ now: { child: "holds", adult: "holds", quake: "tips" } }));
+  r.weights = { child: "later", adult: "primary", quake: "none" };
+  assert.deepEqual(keysFor(r), ["child", "adult"]);
+  assert.equal(statusOf(r.pieces[0], r), "holds");
+  r.weights = { child: "later", adult: "primary", quake: "primary" };
+  assert.equal(statusOf(r.pieces[0], r), "tips");
+});
+
+test("if nothing is marked as mattering, every scenario still counts (visitors, the next owner)", () => {
+  const r = room(card({ now: { child: "tips", adult: "holds", quake: "holds" } }));
+  r.weights = { child: "none", adult: "none", quake: "none" };
+  assert.deepEqual(keysFor(r), ["child", "adult", "quake"]);
+});
+
+test("a fix that only helps a scenario this home doesn't have isn't on the plan, and the room is safe", () => {
+  const latch = { key: "latches", kind: "latches", title: "Latches", answer: { latches: true }, done: false,
+    after: { child: "holds", adult: "holds", quake: "holds" }, how: {} };
+  const r = room(card({ now: { child: "holds", adult: "holds", quake: "tips" }, fixes: [latch] }));
+  r.weights = { child: "primary", adult: "primary", quake: "none" };
+  assert.equal(stepOf(r), "safe");
+  assert.match(nextLine(r).text, /Everything here holds/);
+});
+
+test("who's home not confirmed yet is one more thing to be sure of", () => {
+  const r = room(card({ fixes: [strapN(ALL("holds"))] }));
+  r.askHome = true;
+  assert.equal(stepOf(r), "sure");
+  assert.match(nextLine(r).text, /one quick answer/);
+  r.askHome = false;
+  assert.equal(stepOf(r), "plan");
+});
+
+test("a question only about a scenario this home doesn't have isn't asked", () => {
+  const floor = { ...floorQ, about: ["quake"] };
+  const anchoredQ = { key: "anchored", title: "Is it strapped?", options: [], about: ["child", "adult", "quake"] };
+  const r = room(card({ fixes: [strapN(ALL("holds"))], questions: [floor, anchoredQ] }));
+  r.weights = { child: "primary", adult: "primary", quake: "none" };
+  assert.deepEqual(askGroups(r).map((a) => a.q.key), ["anchored"]);
 });

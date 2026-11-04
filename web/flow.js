@@ -25,6 +25,28 @@ export const KEYS = RISKS.map(([k]) => k);
 export const worstOf = (statuses) => ["tips", "maybe", "holds"].find((s) => statuses.includes(s)) || "holds";
 export const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
+// --- who's home: which scenarios count for this home -------------------------------------------------
+
+// What each scenario counts for, from the household's answers (catalog/household.toml): "primary",
+// "later" (it counts, and is tagged "soon") or "none". A scenario no answer names counts in full.
+export function weightsFor(household, catalog) {
+  const w = Object.fromEntries(KEYS.map((k) => [k, "primary"]));
+  for (const [question, answer] of Object.entries(household || {})) {
+    Object.assign(w, catalog?.[question]?.options?.find((o) => o.key === answer)?.scenarios);
+  }
+  return w;
+}
+
+// The scenarios the verdicts count for this room's home (room.weights); all of them if none is marked as
+// mattering, since visitors and whoever lives here next still climb and lean
+export const keysFor = (room) => {
+  const ks = KEYS.filter((k) => room.weights?.[k] !== "none");
+  return ks.length ? ks : KEYS;
+};
+
+// A piece's verdict for this home: its worst status in the scenarios that count
+export const statusOf = (p, room) => worstOf(keysFor(room).map((k) => p.card.risks[k].status));
+
 // A fix's cost and time, from the catalog's numbers; chats saved before them kept the words
 export const costText = (how) => {
   if (!how?.cost_usd) return how?.cost || "";
@@ -79,8 +101,9 @@ export const roomNow = (room) => Object.fromEntries(KEYS.map((k) => [k, roomWith
 export function todo(room) {
   const now = roomNow(room);
   return fixGroups(room).map((g) => {
-    const gain = KEYS.reduce((n, k) => n + (RANK[roomWith(room, k, g)] < RANK[now[k]]), 0);
-    const lift = g.members.reduce((n, { p }) => n + KEYS.reduce((s, k) => s + RANK[p.card.risks[k].status] - RANK[statusWith(p, k, g)], 0), 0);
+    const ks = keysFor(room);
+    const gain = ks.reduce((n, k) => n + (RANK[roomWith(room, k, g)] < RANK[now[k]]), 0);
+    const lift = g.members.reduce((n, { p }) => n + ks.reduce((s, k) => s + RANK[p.card.risks[k].status] - RANK[statusWith(p, k, g)], 0), 0);
     return { ...g, gain, lift };
   }).sort((a, b) => a.done - b.done || b.act - a.act || b.gain - a.gain || b.lift - a.lift || b.members.length - a.members.length);
 }
@@ -88,8 +111,10 @@ export function todo(room) {
 // The same question on several pieces (same words, same answers) is asked once
 export function askGroups(room) {
   const groups = new Map();
+  const ks = keysFor(room);
   for (const p of room.pieces) {
     for (const q of p.card.questions) {
+      if (q.about && !q.about.some((k) => ks.includes(k))) continue; // about nothing this home has
       const key = q.kind === "measure" ? `${p.n}:${q.key}` : JSON.stringify([q.key, q.title, q.options]);
       if (!groups.has(key)) groups.set(key, { key, q, members: [] });
       groups.get(key).members.push(p);
@@ -155,7 +180,7 @@ export function shoppingList(room) {
 export function planOutcome(room) {
   const best = (p, k) => p.card.fixes.filter((f) => f.answer && !f.done && f.after)
     .reduce((s, f) => (RANK[f.after[k]] < RANK[s] ? f.after[k] : s), p.card.risks[k].status);
-  const hold = room.pieces.filter((p) => KEYS.every((k) => best(p, k) === "holds")).length;
+  const hold = room.pieces.filter((p) => keysFor(room).every((k) => best(p, k) === "holds")).length;
   if (hold === room.pieces.length) return "everything here holds";
   return hold ? `${hold} of ${room.pieces.length} hold` : "";
 }
@@ -195,7 +220,7 @@ const handedOff = (room) => todo(room).filter((g) => g.act && !g.done && g.lift 
 // The fixes that count toward "n of m done": done ones that changed the physics, and the ones still to do
 const counted = (room) => todo(room).filter((g) => g.act && (g.done ? g.members.some((m) => m.f.after) : g.lift > 0));
 
-const atRisk = (room) => Object.values(roomNow(room)).some((s) => s !== "holds");
+const atRisk = (room) => keysFor(room).some((k) => roomWith(room, k, null) !== "holds");
 
 // Being sure while a question is open (assess.py asks only what could change a verdict), then the plan
 // while a fix would make a piece safer, else safe. Fixing and checking are where the person has taken it.
@@ -204,14 +229,15 @@ export function stepOf(room) {
   const open = (key) => key && fixGroups(room).some((g) => g.key === key && !g.done); // not done since
   if (open(room.checking)) return "check";
   if (open(room.fixing)) return "fix";
-  if (!room.skipAsks && askGroups(room).length) return "sure";
+  if (!room.skipAsks && (askGroups(room).length || room.askHome)) return "sure"; // askHome: who's home, unconfirmed
   return toDo(room).length || handedOff(room).length ? "plan" : "safe";
 }
 
 // What the room becomes with a fix done: everything holds, or how many of its pieces do
 function outcome(room, g) {
-  if (KEYS.every((k) => roomWith(room, k, g) === "holds")) return "then everything here holds";
-  const hold = room.pieces.filter((p) => KEYS.every((k) => statusWith(p, k, g) === "holds")).length;
+  const ks = keysFor(room);
+  if (ks.every((k) => roomWith(room, k, g) === "holds")) return "then everything here holds";
+  const hold = room.pieces.filter((p) => ks.every((k) => statusWith(p, k, g) === "holds")).length;
   return hold ? `then ${hold} of ${room.pieces.length} hold` : "";
 }
 const numbers = (members) => [...new Set(members.map((m) => (m.p ?? m).n))];
@@ -221,9 +247,9 @@ export function nextLine(room) {
   const step = stepOf(room);
   if (step === "sure") { // the questions are right below: say how many, not which
     const asks = askGroups(room);
-    const n = asks.length;
+    const n = asks.length + (room.askHome ? 1 : 0);
     return { step, text: `Next: ${n === 1 ? "one quick answer" : `${n} quick answers`} make this sure`,
-      pieces: numbers(asks.flatMap((a) => a.members)), key: asks[0].key };
+      pieces: numbers(asks.flatMap((a) => a.members)), key: asks[0]?.key ?? "home" };
   }
   if (step === "plan" || step === "fix" || step === "check") {
     const groups = counted(room);
