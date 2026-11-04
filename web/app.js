@@ -408,6 +408,7 @@ async function send() {
 
   const form = new FormData();
   form.append("text", text);
+  form.append("thread", thread.id); // the room library notes which chat checked it
   if (previousId) form.append("previous_response_id", previousId);
   if (!file && pieces.length) form.append("context", JSON.stringify(pieces.map(contextOf)));
   els.text.value = "";
@@ -423,7 +424,7 @@ async function send() {
       form.append("media", up.file, up.file.name);
       if (up.at != null) form.append("frame_at_s", up.at.toFixed(2));
     }
-    const res = await fetch("/api/turn", { method: "POST", body: form });
+    const res = await fetch("/api/turn", { method: "POST", body: form, headers: { "X-Owner": OWNER } }); // its home
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "";
@@ -536,9 +537,11 @@ class BotMessage {
     // One card of choices for the photo (questions and fixes, for the room or its one piece). The
     // simulation and the details open in the panel, from a scenario, an outline or a fix's "Show me".
     const room = { ev, pieces: [], el: document.createElement("article"), figure: top.querySelector(".still"),
-      handed: (ev.handed ??= {}), was: (ev.was ??= {}) }; // saved with the chat: what's with someone else, how it was
+      handed: (ev.handed ??= {}), was: (ev.was ??= {}), // saved with the chat: what's with someone else, how it was
+      id: ev.report.room_id, known: ev.report.known }; // its record in the home's library; what it was last time
     ev.cards.forEach((card, index) => {
       const p = { run: ev.run, index, n: pieces.length + 1, card, still: ev.still, size: ev.size, record: ev, room, el: room.el };
+      if (room.known?.checked?.[index] && !card.checked) card.checked = room.known.checked[index]; // from last time
       p.marker = top.querySelector(`[data-piece="${index}"]`);
       p.marker?.setAttribute("data-n", p.n);
       top.querySelectorAll(`[data-piece="${index}"] text`).forEach((t) => (t.textContent = p.n));
@@ -785,11 +788,44 @@ function bindHome(room) {
     QUESTIONS.forEach((q) => (home[q] = guessed(room, q))); // what the photo guessed, as shown
     home.confirmed = true;
     saveHome();
+    fetch("/api/home/household", { method: "PUT", headers: { "Content-Type": "application/json", "X-Owner": OWNER }, body: JSON.stringify(home) }).catch(() => {});
     rooms().forEach((r) => (r.reviewHome = false));
     rooms().forEach(renderCard); // every room in the chat is this home
     if (pnl.room) renderPanel();
     summarizeStatus();
   });
+}
+
+// --- a room checked before: what was found then, and what changed --------------------------------
+
+const CHANGE_ICON = { kept: "holds", new: "box", gone: "close", moved: "distance", worse: "tips", better: "holds", added: "top", removed: "top" };
+const CHANGE_ORDER = ["worse", "new", "added", "moved", "gone", "kept", "better", "removed"];
+const KNOWN_SHOWN = 5;
+
+function knownHTML(room) {
+  const k = room.known;
+  if (!k) return "";
+  const ks = keysFor(room);
+  const shown = k.changes
+    .filter((c) => !c.scenarios || c.scenarios.some((x) => ks.includes(x))) // only what counts for this home
+    .filter((c) => c.kind !== "added" || c.hurts) // a new plush toy on top isn't news
+    .sort((a, b) => CHANGE_ORDER.indexOf(a.kind) - CHANGE_ORDER.indexOf(b.kind));
+  const chips = shown.slice(0, KNOWN_SHOWN).map((c) => `<span class="kchip ${c.kind}" title="${esc(c.text)}">${ICON[CHANGE_ICON[c.kind]] || ""}<span>${esc(clip(c.text, 56))}</span></span>`).join("")
+    + (shown.length > KNOWN_SHOWN ? `<span class="kchip more">+${shown.length - KNOWN_SHOWN}</span>` : "");
+  return `<div class="known">${ICON.room}<div class="kt"><b>Your ${esc(clip(k.name, 30))} again</b><small>Checked ${day(k.since)}${shown.length ? "" : " · nothing has changed"}</small></div>
+    ${chips ? `<div class="kchips">${chips}</div>` : ""}</div>`;
+}
+
+// The room's record in the library follows every tap: what's answered, done and checked
+const roomTimers = new Map();
+function saveRoom(room) {
+  if (!room.id) return;
+  clearTimeout(roomTimers.get(room));
+  roomTimers.set(room, setTimeout(() => {
+    const body = JSON.stringify({ run: room.ev.run, thread: thread?.id, cards: room.pieces.map((p) => p.card),
+      extras: { checked: Object.fromEntries(room.pieces.map((p) => [p.index, p.card.checked || {}])) } });
+    fetch(`/api/home/rooms/${room.id}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Owner": OWNER }, body }).catch(() => {});
+  }, 400));
 }
 
 // --- where the room is: the steps of a check, and the one thing to do next ------------------------
@@ -1012,14 +1048,14 @@ function renderCard(room) {
   const doing = (step === "fix" || step === "check") && groups.find((g) => g.key === (step === "fix" ? room.fixing : room.checking));
   if (doing) {
     room.el.className = `card choices ${head.status}${pnl.room === room ? " open" : ""}${room.pending ? " busy" : ""}`;
-    room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}${step === "fix" ? fixHTML(room, doing) : checkHTML(room, doing)}`;
+    room.el.innerHTML = `${glanceHTML(room, head)}${knownHTML(room)}${trackHTML(room, step, asks)}${step === "fix" ? fixHTML(room, doing) : checkHTML(room, doing)}`;
     enter.done();
     bindCard(room);
     bindFix(room);
     markOpen();
     return;
   }
-  room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}
+  room.el.innerHTML = `${glanceHTML(room, head)}${knownHTML(room)}${trackHTML(room, step, asks)}
     ${asking ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${room.askHome ? homeHTML(room) : ""}${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
     ${acts.length ? `<section class="block"><h4>${ICON.wrench}${head.status === "holds" ? "Keep it that way" : "Do these first"}</h4>
       ${shopHTML(room)}<div class="todo">${rows}</div>${planEndHTML(room, acts)}</section>` : ""}
@@ -1537,6 +1573,7 @@ async function recheck(p, answers) {
     renderCard(room);
     if (pnl.room === room) renderPanel();
     saveThread();
+    saveRoom(room);
   } catch (err) {
     toast(`Couldn't re-check: ${err.message.slice(0, 100)}`);
     renderCard(room);
@@ -1603,31 +1640,94 @@ function saveThread() {
 const worst = (statuses) => ["tips", "maybe", "holds"].find((s) => statuses.includes(s)) || null;
 const VERDICT = { tips: "Can tip", maybe: "Might tip", holds: "Stable" };
 
+const homeApi = (path = "", init = {}) =>
+  fetch(`/api/home${path}`, { ...init, headers: { ...init.headers, "X-Owner": OWNER } });
+
+// The server's household, when this browser hasn't confirmed one (another tab, an earlier visit)
+homeApi().then((r) => r.json()).then(({ household }) => {
+  if (household?.confirmed && !home.confirmed) {
+    Object.assign(home, household);
+    saveHome();
+    rooms().forEach(renderCard);
+  }
+}).catch(() => {});
+
+// Everything still to buy across the home's rooms, from each room's last breakdown
+function homeShopping(recs) {
+  const items = new Map();
+  let lo = 0, hi = 0, minutes = 0;
+  for (const r of recs) {
+    for (const p of r.breakdown.pieces) {
+      for (const t of p.todo || []) {
+        if (t.cost_usd) [lo, hi] = [lo + t.cost_usd[0], hi + t.cost_usd[1]];
+        minutes += t.minutes || 0;
+        if (t.count > 0 && t.item) items.set(t.item, (items.get(t.item) || 0) + t.count);
+      }
+    }
+  }
+  return { items: [...items].map(([item, qty]) => ({ item, qty })), cost_usd: [lo, hi], minutes };
+}
+
+function homeHead(recs) {
+  const answered = QUESTIONS.filter((q) => home[q] && HOUSEHOLD[q]).map((q) => HOUSEHOLD[q].options.find((o) => o.key === home[q])?.label).filter(Boolean);
+  const who = home.confirmed ? `<div class="hwho">${ICON.room}<span>${esc(answered.join(" · ") || "Who's home: not set")}</span><button type="button" class="more" data-home-change>Change</button></div>` : "";
+  const shop = homeShopping(recs);
+  const buy = shop.items.length || shop.minutes
+    ? `<div class="hshop">${ICON.bag}<span>${esc(shop.items.map((x) => `${x.qty} × ${x.item}`).join(" · ") || "Nothing to buy")}</span><span class="sm">${chip(costText(shop))}${chip(timeText(shop), ICON.clock, "time")}</span></div>` : "";
+  return who + buy;
+}
+
+function roomItem(r, i) {
+  const st = worst(keysFor({ weights: home.confirmed ? weightsFor(home, HOUSEHOLD) : null }).map((k) => r.breakdown.status[k])) || "holds";
+  const left = r.breakdown.pieces.reduce((n, p) => n + (p.todo || []).length, 0);
+  return `<div class="hitem room" role="button" tabindex="0" data-room="${r.id}" data-thread="${r.thread || ""}" style="--i:${i}">
+    <span class="hthumb" style="background-image:url('${r.still}')"></span>
+    <span class="htext"><span class="htitle">${esc(cap1(clip(r.name, 60)))}</span>
+      <span class="hmeta"><i class="${st}"></i>${VERDICT[st]} · ${left ? `${left} to do` : "nothing to do"} · ${ago(r.updated)}</span></span>
+    <span class="hdel" role="button" title="Forget this room">${ICON.close}</span></div>`;
+}
+
 async function openHistory() {
   els.history.hidden = false;
   els.historyBtn.setAttribute("aria-expanded", "true");
   els.historyList.innerHTML = `<div class="history-empty">Loading…</div>`;
-  let list = [];
+  let list = [], recs = [];
   try {
-    list = await (await threadApi()).json();
+    [list, { rooms: recs }] = await Promise.all([threadApi().then((r) => r.json()), homeApi().then((r) => r.json())]);
   } catch {
-    els.historyList.innerHTML = `<div class="history-empty">Couldn't load past checks.</div>`;
+    els.historyList.innerHTML = `<div class="history-empty">Couldn't load your home.</div>`;
     return;
   }
-  if (!list.length) {
-    els.historyList.innerHTML = `<div class="history-empty">Nothing yet. Your checks will show up here.</div>`;
+  if (!list.length && !recs.length) {
+    els.historyList.innerHTML = `<div class="history-empty">Nothing yet. Every room you check is kept here.</div>`;
     return;
   }
-  els.historyList.innerHTML = list.map((t, i) => `
+  const roomsHTML = recs.length ? `<div class="hsec">Rooms</div>${homeHead(recs)}${recs.map(roomItem).join("")}` : "";
+  els.historyList.innerHTML = roomsHTML + (list.length ? `<div class="hsec">Chats</div>` : "") + list.map((t, i) => `
     <div class="hitem${thread?.id === t.id ? " current" : ""}" role="button" tabindex="0" data-id="${t.id}" style="--i:${i}">
       <span class="hthumb"${t.thumb ? ` style="background-image:url('${t.thumb}')"` : ""}></span>
       <span class="htext"><span class="htitle">${esc(clip(t.title, 120) || "Room check")}</span>
         <span class="hmeta"><i class="${t.status || ""}"></i>${t.status ? VERDICT[t.status] + " · " : ""}${ago(t.updated)}</span></span>
       <span class="hdel" role="button" title="Delete">${ICON.close}</span>
     </div>`).join("");
-  els.historyList.querySelectorAll(".hitem").forEach((item) => {
+  els.historyList.querySelectorAll(".hitem:not(.room)").forEach((item) => {
     item.onclick = (e) => (e.target.closest(".hdel") ? deleteThread(item.dataset.id) : openThread(item.dataset.id));
     item.onkeydown = (e) => e.key === "Enter" && openThread(item.dataset.id);
+  });
+  els.historyList.querySelectorAll(".hitem.room").forEach((item) => {
+    const open = () => item.dataset.thread && openThread(item.dataset.thread);
+    item.onclick = async (e) => {
+      if (!e.target.closest(".hdel")) return open();
+      await homeApi(`/rooms/${item.dataset.room}`, { method: "DELETE" }); // forgotten: its next photo is a new room
+      openHistory();
+    };
+    item.onkeydown = (e) => e.key === "Enter" && open();
+  });
+  els.historyList.querySelector("[data-home-change]")?.addEventListener("click", () => {
+    home.confirmed = false; // "Who's home?" is asked again on the room cards
+    saveHome();
+    rooms().forEach(renderCard);
+    closeHistory();
   });
 }
 

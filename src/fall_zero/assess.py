@@ -507,8 +507,10 @@ def card(entry: dict, answers: dict | None = None, simulate_quakes: bool = False
     return assess(entry, answers, simulate_quakes)
 
 
-def assess_all(report: dict, simulate_quakes: bool = False) -> list[dict]:
-    return [card(e, simulate_quakes=simulate_quakes) for e in report["pieces"] if e["status"] in CARD_STATUSES]
+def assess_all(report: dict, simulate_quakes: bool = False, answers: dict[int, dict] | None = None) -> list[dict]:
+    """Every card of a report; `answers` (card index -> answers) starts some from what's already known."""
+    entries = [e for e in report["pieces"] if e["status"] in CARD_STATUSES]
+    return [card(e, (answers or {}).get(i), simulate_quakes) for i, e in enumerate(entries)]
 
 
 # --- pieces the engine can't build ------------------------------------------------------------
@@ -520,6 +522,11 @@ FALLS = {"tips": "Can fall over", "maybe": "Might fall over", "holds": "Stable"}
 # A judged fix whose icon clearly is a catalog kind gets that kind's practical advice: tying it to the wall,
 # clearing where it lands. Others ("Hang it instead") stay the judge's own words.
 JUDGED_KINDS = {"strap": "strap", "distance": "distance"}
+
+
+def judged_icon(fix: dict) -> str:
+    """The icon the page draws for a judged fix (the judge may name one the page hasn't got)."""
+    return fix["icon"] if fix["icon"] in ICONS else "top" if fix["icon"] == "move" else "strap"
 
 
 def judged_card(entry: dict, answers: dict | None = None) -> dict:
@@ -545,7 +552,7 @@ def judged_card(entry: dict, answers: dict | None = None) -> dict:
     status = overall(rs)
     fixes = []
     for i, f in enumerate(j["fixes"]):
-        icon = f["icon"] if f["icon"] in ICONS else "top" if f["icon"] == "move" else "strap"
+        icon = judged_icon(f)
         kind = {"kind": JUDGED_KINDS[icon], "how": how(JUDGED_KINDS[icon])} if icon in JUDGED_KINDS else {}
         fixes.append({"key": f"fix_{i}", "icon": icon, "title": f["title"], "why": f["why"], "after": f["after"],
                       "answer": {f"fix_{i}": True}, "done": bool(a.get(f"fix_{i}"))} | kind)  # fmt: skip

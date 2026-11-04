@@ -420,6 +420,29 @@ main {
 .plan-end.holds { background: var(--holds-bg); color: var(--holds); }
 .plan-end.tips { background: var(--tips-bg); color: var(--tips); }
 
+/* a room checked before: last time, and what changed since */
+.card.choices > .known { margin-top: 12px; }
+.known { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 12px; border-radius: 16px; background: var(--soft); }
+.known > svg { width: 20px; height: 20px; color: var(--accent); flex: none; }
+.known .kt { display: flex; flex-direction: column; min-width: 0; margin-right: auto; }
+.known .kt b { font-size: 14.5px; }
+.known .kt small { font-size: 12.5px; color: var(--muted); }
+.kchips { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; }
+.kchip { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; background: #fff; border: 1px solid var(--line); max-width: 100%; }
+.kchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kchip svg { width: 14px; height: 14px; flex: none; stroke-width: 2.2; }
+.kchip.kept, .kchip.better { color: var(--holds); border-color: #bfe5cc; }
+.kchip.worse, .kchip.added { color: var(--tips); border-color: #f6c9c9; }
+.kchip.new, .kchip.moved { color: var(--maybe); border-color: #f3dfb3; }
+.kchip.gone, .kchip.removed, .kchip.more { color: var(--muted); }
+/* My home: who's home, the rooms and what's left to buy, then the chats */
+.hsec { padding: 10px 10px 4px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; }
+.hwho, .hshop { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; color: #3b3b44; min-width: 0; }
+.hwho svg, .hshop > svg { width: 16px; height: 16px; color: var(--muted); flex: none; }
+.hwho span, .hshop > span:not(.sm) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hwho .more { margin-left: auto; padding: 2px 10px; font-size: 12px; }
+.hshop .sm { display: flex; gap: 4px; margin-left: auto; flex: none; }
+
 /* who's home: one card of chips at the top of "Help me be sure"; a scenario not for this home is dimmed */
 .q.home { grid-column: 1 / -1; border-color: #bcd0fb; background: #f5f8ff; gap: 10px; }
 .q.home .qt svg { width: 18px; height: 18px; color: var(--accent); flex: none; margin-top: 1px; }

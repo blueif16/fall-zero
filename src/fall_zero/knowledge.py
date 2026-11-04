@@ -18,7 +18,7 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from fall_zero import meta
 from fall_zero.furniture import SKILL_DIR, catalog, contents, examples, materials
@@ -83,6 +83,19 @@ class Spotted(BaseModel):
     engine: Literal["case", "judge"]
     references: list[RefName]
     on_it: list[Thing]  # every separate thing standing on it, on top or on its open shelves
+
+
+def match(image: Path | str, rooms: list[tuple[str, str]]) -> str | None:
+    """Which of the home's rooms (id, its photo) the new photo shows, or None: the "Match" section."""
+    if not rooms:
+        return None
+    ids = tuple(rid for rid, _ in rooms)
+    answer = create_model("RoomMatch", why=(str, ...), room=(Literal[(*ids, "none")], ...))
+    said = "; ".join(f"photo {i + 2} is room {rid}" for i, rid in enumerate(ids))
+    found = meta.respond_json(f"Photo 1 is the new photo. The rooms checked before: {said}.", answer,
+                              images=[image, *(p for _, p in rooms)], effort=EFFORT,
+                              instructions=instructions("Match"))  # fmt: skip
+    return None if found.room == "none" else found.room
 
 
 class Survey(BaseModel):
