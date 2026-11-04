@@ -33,6 +33,10 @@ Use only the CARDS' verdicts. Never invent a verdict, size or weight. If every p
 Things standing on a piece (on top or on its shelves) are rated danger, caution or fine: mention only the \
 hard ones that would hurt someone, never soft things like plush toys.
 
+When KNOWN is present, this room was checked before: start from what changed since (CHANGED: a fix \
+still in place, something new, moved or put on top), in the same one or two sentences, and don't \
+repeat what still holds.
+
 For follow-up questions answer in at most three short sentences, from the cards and general \
 furniture-safety knowledge. CONTEXT, when present, is the cards as they stand after the user's taps. If \
 asked about a change the cards don't cover, say it hasn't been checked yet rather than guessing. If no \
@@ -75,6 +79,23 @@ def _room(cards: list[dict]) -> dict:
                             for t, v in sorted(fixes.items(), key=lambda kv: -kv[1]["settles"])][:3]}  # fmt: skip
 
 
+def turn_prompt(text: str, cards: list[dict], others: list[str], known: dict | None) -> str:
+    """What the agent reads about a new photo: the cards, the room, and for a room checked before
+    (`known`, library.py), what it found then and what changed since."""
+    said = f'They wrote: "{text}"' if text else "They didn't write anything."
+    prompt = f"The user sent a room photo. {said}\nCARDS:\n{json.dumps(_brief(cards))}"
+    if len(cards) > 1:
+        prompt += f"\nROOM:\n{json.dumps(_room(cards))}"
+    if others:
+        prompt += f"\nAlso in the photo, not checked (no template yet): {', '.join(others)}"
+    if known:
+        last = [{"piece": p["name"], "worst": max(p["status"].values(), key=RANK.__getitem__), "done": p["done"]}
+                for p in known["last"]["pieces"]]  # fmt: skip
+        prompt += (f"\nKNOWN: their {known['name']}, last checked {known['since'][:10]}: {json.dumps(last)}"
+                   f"\nCHANGED: {json.dumps([c['text'] for c in known['changes']]) or 'nothing'}")  # fmt: skip
+    return prompt
+
+
 async def reply(
     text: str = "",
     image: Path | None = None,
@@ -82,15 +103,11 @@ async def reply(
     others: list[str] | None = None,
     context: str = "",
     previous_response_id: str | None = None,
+    known: dict | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """Stream the answer: yields ("delta", text) chunks, then ("done", response_id)."""
     if cards is not None:
-        said = f'They wrote: "{text}"' if text else "They didn't write anything."
-        prompt = f"The user sent a room photo. {said}\nCARDS:\n{json.dumps(_brief(cards))}"
-        if len(cards) > 1:
-            prompt += f"\nROOM:\n{json.dumps(_room(cards))}"
-        if others:
-            prompt += f"\nAlso in the photo, not checked (no template yet): {', '.join(others)}"
+        prompt = turn_prompt(text, cards, others or [], known)
     else:
         prompt = f"CONTEXT:\n{context}\n\n{text}" if context else text
     content: list[dict] = [{"type": "input_text", "text": prompt}]

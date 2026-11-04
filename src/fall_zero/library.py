@@ -27,6 +27,7 @@ RANK = {"holds": 0, "maybe": 1, "tips": 2}
 CARRY = ("anchored", "locks", "drawers", "depth", "material", "measured")  # what stays true of a piece
 ROOM_WIDE = ("floor",)  # what is true of the whole room
 HURTS = ("danger", "caution")  # what would hurt someone if it fell
+TODO = ("item", "count", "cost_usd", "minutes")  # a fix still to do, for the home's shopping list
 STOP = {"the", "a", "an", "by", "on", "of", "with", "in", "and", "to", "under", "next", "near"}
 
 
@@ -60,6 +61,11 @@ def _worst(statuses) -> str:
 # --- a check of a room, as a record ------------------------------------------------------------------
 
 
+def _todo(fix: dict) -> dict:
+    how = fix.get("how") or {}
+    return {"kind": fix.get("kind", ""), "title": fix["title"]} | {k: how[k] for k in TODO if k in how}
+
+
 def breakdown(report: dict, cards: list[dict], pieces: list[dict], now: str) -> dict:
     """What this check found, piece by piece: the verdict per scenario and why, what would fall from it,
     what stands on it, where it stands, the fixes done and the questions still open."""
@@ -73,6 +79,7 @@ def breakdown(report: dict, cards: list[dict], pieces: list[dict], now: str) -> 
             "falls": [n for n, it in zip(items, c.get("items", []), strict=True) if it.get("level") in HURTS],
             "items": items,
             "done": [f["title"] for f in c["fixes"] if f.get("done")],
+            "todo": [_todo(f) for f in c["fixes"] if f.get("answer") and not f.get("done")],
             "open": [q["title"] for q in c["questions"]],
         })  # fmt: skip
     status = {k: _worst(p["status"][k] for p in out) for k in RISK_KEYS}
@@ -88,6 +95,7 @@ def record(report: dict, cards: list[dict], run: str, previous: dict | None = No
     ids = dict(ids or {})
     width = report["size"][0]
     checked = (extras or {}).get("checked", {})
+    was = {p["id"]: p for p in (previous or {}).get("pieces", [])}
     pieces = []
     for i, (e, c) in enumerate(zip(entries(report), cards, strict=True)):
         pid = ids.get(i) or f"p{uuid.uuid4().hex[:8]}"
@@ -95,7 +103,7 @@ def record(report: dict, cards: list[dict], run: str, previous: dict | None = No
             "id": pid, "name": c["name"], "family": e["piece"].get("family", ""), "x": _x(e, width),
             "box": e.get("box"), "answers": c.get("answers", {}),
             "done": [f["kind"] for f in c["fixes"] if f.get("done") and f.get("kind")],
-            "checked": checked.get(str(i), checked.get(i, {})),
+            "checked": checked.get(str(i)) or checked.get(i) or was.get(pid, {}).get("checked", {}),
         })  # fmt: skip
     bd = breakdown(report, cards, pieces, now)
     before = (previous or {}).get("history", [])

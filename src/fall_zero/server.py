@@ -186,7 +186,9 @@ async def turn(
                             upload=f"{files}/{upload.name}", size=report["size"], frame_at_s=report["frame_at_s"],
                             cards=cards, others=others, report=report)  # fmt: skip
             yield _line(type="step", text="Writing it up · Muse Spark")
-            async for kind, value in agent.reply(text, image, cards, others, context, previous_response_id or None):
+            known = report.get("known") if upload else None
+            async for kind, value in agent.reply(text, image, cards, others, context, previous_response_id or None,
+                                                 known):  # fmt: skip
                 yield _line(type=kind, text=value) if kind == "delta" else _line(type="done", response_id=value)
         except Exception as exc:  # the page shows it in the chat instead of hanging
             yield _line(type="error", text=f"{type(exc).__name__}: {exc}")
@@ -296,6 +298,7 @@ def _remember(owner, run, report, cards, previous, ids, carried, thread) -> None
     if previous:
         report["known"] = {"name": previous["name"], "since": previous["updated"], "last": previous["breakdown"],
                            "carried": {str(i): a for i, a in carried.items()},
+                           "checked": {str(i): p["checked"] for i, p in enumerate(rec["pieces"]) if p["checked"]},
                            "changes": library.changes(previous["breakdown"], rec["breakdown"])}  # fmt: skip
 
 

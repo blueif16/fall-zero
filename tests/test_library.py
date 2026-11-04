@@ -178,3 +178,19 @@ def test_who_is_home_is_kept_for_the_home(local):
     assert client.get("/api/home").json()["household"] == {}
     client.put("/api/home/household", json={"child": "climbing", "quake": "no", "confirmed": True})
     assert client.get("/api/home").json()["household"] == {"child": "climbing", "quake": "no", "confirmed": True}
+
+
+def test_a_known_room_keeps_when_each_fix_was_checked():
+    before = library.record(LIVING, [card(n) for n, _, _ in (BOOK, STAND, MIRROR)], run="r1",
+                            extras={"checked": {"0": {"kind:strap": "2026-11-02"}}})  # fmt: skip
+    ids = {0: before["pieces"][0]["id"]}
+    later = library.record(report(BOOK), [card(BOOK[0])], run="r2", previous=before, ids=ids)
+    assert later["pieces"][0]["checked"] == {"kind:strap": "2026-11-02"}
+
+
+def test_the_breakdown_lists_what_is_left_to_buy_and_do():
+    how = {"item": "Anti-tip straps", "count": 2, "cost_usd": [10, 25], "minutes": 15}
+    rec = library.record(report(BOOK), [card(BOOK[0], fixes=[strap() | {"how": how}])], run="r1")
+    assert rec["breakdown"]["pieces"][0]["todo"] == [{"kind": "strap", "title": "Strap it to the wall"} | how]
+    done = library.record(report(BOOK), [card(BOOK[0], CALM, fixes=[strap(done=True) | {"how": how}])], run="r1")
+    assert done["breakdown"]["pieces"][0]["todo"] == []

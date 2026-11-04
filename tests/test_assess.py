@@ -257,3 +257,17 @@ def test_every_question_says_which_scenarios_it_can_change():
         assert seen["floor"] == ["quake"]
     judged = judged_card(judged_entry())["questions"]
     assert all(q["about"] for q in judged)
+
+
+def test_the_opener_hears_what_changed_in_a_known_room():
+    from fall_zero import agent
+
+    card = assess(entry("chest_tall_6"))
+    known = {"name": "nursery", "since": "2026-11-02T10:00:00+00:00",
+             "last": {"pieces": [{"name": "tall chest", "status": {"child": "tips"}, "done": []}]},
+             "changes": [{"kind": "kept", "text": "Still in place: strap it to the wall (tall chest)"},
+                         {"kind": "new", "text": "New: toy chest"}]}  # fmt: skip
+    said = agent.turn_prompt("", [card], [], known)
+    assert "Still in place: strap it to the wall (tall chest)" in said and "New: toy chest" in said
+    assert "2026-11-02" in said and "nursery" in said
+    assert "CHANGED" not in agent.turn_prompt("", [card], [], None)
