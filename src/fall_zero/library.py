@@ -28,6 +28,7 @@ CARRY = ("anchored", "locks", "drawers", "depth", "material", "measured")  # wha
 ROOM_WIDE = ("floor",)  # what is true of the whole room
 HURTS = ("danger", "caution")  # what would hurt someone if it fell
 TODO = ("item", "count", "cost_usd", "minutes")  # a fix still to do, for the home's shopping list
+NEAR = 0.15  # two things this close along a piece (a share of its width) are the same thing
 STOP = {"the", "a", "an", "by", "on", "of", "with", "in", "and", "to", "under", "next", "near"}
 
 
@@ -61,6 +62,32 @@ def _worst(statuses) -> str:
 # --- a check of a room, as a record ------------------------------------------------------------------
 
 
+def _across(box, piece) -> float | None:
+    """Where a thing stands along its piece, from its left edge (0) to its right (1)."""
+    if not box or not piece or piece[2] <= piece[0]:
+        return None
+    return round(((box[0] + box[2]) / 2 - piece[0]) / (piece[2] - piece[0]), 3)
+
+
+def _same_things(before: dict, after: dict) -> tuple[list[str], list[str]]:
+    """What was put on a piece and what was taken off. A thing goes by its name, or else by its place (on
+    top or on a shelf, at about the same spot along the piece), since one photo's "vase" is another's
+    "potted plant". Breakdowns saved before places were kept go by name alone."""
+    old = list(before.get("spots") or [{"name": n} for n in before["items"]])
+    put = []
+    for t in after.get("spots") or [{"name": n} for n in after["items"]]:
+        near = [o for o in old if o.get("x") is not None and t.get("x") is not None and o.get("where") == t.get("where")
+                and abs(o["x"] - t["x"]) < NEAR]  # fmt: skip
+        same = next((o for o in old if o["name"] == t["name"]), None) or (
+            min(near, key=lambda o: abs(o["x"] - t["x"])) if near else None
+        )
+        if same:
+            old.remove(same)
+        else:
+            put.append(t["name"])
+    return put, [o["name"] for o in old]
+
+
 def _todo(fix: dict) -> dict:
     how = fix.get("how") or {}
     return {"kind": fix.get("kind", ""), "title": fix["title"]} | {k: how[k] for k in TODO if k in how}
@@ -78,6 +105,8 @@ def breakdown(report: dict, cards: list[dict], pieces: list[dict], now: str) -> 
             "why": {k: c["risks"][k].get("says", "") for k in RISK_KEYS},
             "falls": [n for n, it in zip(items, c.get("items", []), strict=True) if it.get("level") in HURTS],
             "items": items,
+            "spots": [{"name": n, "where": it.get("where", "top"), "x": _across(it.get("box"), p["box"])}
+                      for n, it in zip(items, c.get("items", []), strict=True)],  # fmt: skip
             "done": [f["title"] for f in c["fixes"] if f.get("done")],
             "todo": [_todo(f) for f in c["fixes"] if f.get("answer") and not f.get("done")],
             "open": [q["title"] for q in c["questions"]],
@@ -202,9 +231,10 @@ def changes(before: dict, after: dict) -> list[dict]:
             say("worse", n, f"{n['name']} can fall now", scenarios=worse)
         if better:
             say("better", n, f"{n['name']} holds better", scenarios=better)
-        for item in [i for i in n["items"] if i not in o["items"]]:
+        put, taken = _same_things(o, n)
+        for item in put:
             say("added", n, f"New on {n['name']}: {item}", item=item, hurts=item in n["falls"])
-        for item in [i for i in o["items"] if i not in n["items"]]:
+        for item in taken:
             say("removed", n, f"Off {n['name']}: {item}", item=item)
         for fix in [f for f in o["done"] if f in n["done"]]:
             say("kept", n, f"Still in place: {fix.lower()} ({n['name']})", fix=fix)

@@ -194,3 +194,20 @@ def test_the_breakdown_lists_what_is_left_to_buy_and_do():
     assert rec["breakdown"]["pieces"][0]["todo"] == [{"kind": "strap", "title": "Strap it to the wall"} | how]
     done = library.record(report(BOOK), [card(BOOK[0], CALM, fixes=[strap(done=True) | {"how": how}])], run="r1")
     assert done["breakdown"]["pieces"][0]["todo"] == []
+
+
+def test_a_thing_renamed_in_the_new_photo_is_the_same_thing_if_it_sits_in_the_same_place():
+    """The model may call the same pot "vase" one time and "potted plant" the next."""
+
+    def on_book(*things):  # (name, x across the bookcase, where), the bookcase spanning x 150..250
+        return [{"short": n, "level": "caution", "where": w, "box": [150 + x * 100 - 5, 120, 150 + x * 100 + 5, 140]}
+                for n, x, w in things]  # fmt: skip
+
+    before = [card(BOOK[0], items=on_book(("vase", 0.3, "top"), ("basket", 0.7, "shelf")))]
+    old = library.record(report(BOOK), before, run="r1")
+    ids = {0: old["pieces"][0]["id"]}
+    now = [card(BOOK[0], items=on_book(("potted plant", 0.33, "top"), ("TV", 0.8, "top")))]
+    new = library.record(report(BOOK), now, run="r2", previous=old, ids=ids)
+    said = {(c["kind"], c.get("item")) for c in library.changes(old["breakdown"], new["breakdown"])}
+    assert ("added", "TV") in said and ("removed", "basket") in said  # nothing like them there before / now
+    assert ("added", "potted plant") not in said and ("removed", "vase") not in said  # the same pot, renamed
