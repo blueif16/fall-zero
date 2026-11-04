@@ -27,8 +27,6 @@ anchors = true
 icon = "strap"
 why = "A strap into a stud holds it when a child climbs it or the floor shakes."
 buy = "2 metal or nylon anti-tip straps"
-cost = "$10–25"
-time = "15 min"
 tools = ["Drill", "Stud finder"]
 steps = [
   "Find a stud behind the top of the piece",
@@ -139,8 +137,6 @@ anchors = true
 icon = "strap"
 why = "The bracket holds the back down when someone stands on the open oven door."
 buy = "The anti-tip bracket for this range (most come with one; makers send replacements)"
-cost = "$0–20"
-time = "20 min"
 tools = ["Drill"]
 steps = [
   "Slide the range out",
@@ -217,8 +213,6 @@ anchors = true
 icon = "tv"
 why = "A strapped TV can't topple forward onto a child."
 buy = "A TV anti-tip strap kit (2 straps), or a wall mount"
-cost = "$10–20"
-time = "15 min"
 tools = ["Screwdriver", "Drill"]
 steps = [
   "Screw the straps into the threaded holes on the back of the TV",
@@ -307,8 +301,6 @@ label = "Drawer latches"
 icon = "lock"
 why = "Only one drawer opens at a time, whether a child pulls them or the floor shakes."
 buy = "Child-safety drawer latches, one per drawer"
-cost = "$10–20 a set"
-time = "20 min"
 tools = ["Screwdriver"]
 steps = [
   "Fit a latch inside the top of each drawer",
@@ -361,8 +353,6 @@ label = "Move heavy things lower"
 icon = "top"
 why = "Weight up high tips it sooner, and falls first."
 buy = ""
-cost = "Free"
-time = "5 min"
 tools = []
 steps = [
   "Put the TV and heavy or breakable things on low, wide furniture",
@@ -387,8 +377,6 @@ label = "Nothing tempting up high"
 icon = "toy"
 why = "Children climb to get what they can see."
 buy = ""
-cost = "Free"
-time = "2 min"
 tools = []
 steps = [
   "Move toys, the remote and snacks to a low shelf a child can reach",
@@ -413,8 +401,6 @@ label = "Heaviest in the bottom"
 icon = "weight"
 why = "Weight down low keeps it standing; weight up high pulls it over."
 buy = ""
-cost = "Free"
-time = "10 min"
 tools = []
 steps = [
   "Put the heaviest things in the bottom drawers or on the lowest shelves",
@@ -439,8 +425,6 @@ label = "Everyday things within reach"
 icon = "hand"
 why = "Reaching up or leaning on it for balance is how adults pull it over."
 buy = ""
-cost = "Free"
-time = "10 min"
 tools = []
 steps = [
   "Keep things used every day between waist and shoulder height",
@@ -465,8 +449,6 @@ label = "Clear where it would land"
 icon = "distance"
 why = "If it falls, nobody is under it."
 buy = ""
-cost = "Free"
-time = "10 min"
 tools = []
 steps = [
   "Move the crib, bed or play mat out of the shaded area where it would land",
@@ -491,8 +473,6 @@ label = "Cabinet latches for shaking"
 icon = "latch"
 why = "Shaking swings doors open and what's behind them falls out."
 buy = "Earthquake latches for the doors"
-cost = "$10–30"
-time = "20 min"
 tools = ["Screwdriver"]
 steps = [
   "Fit a latch inside each door that opens on its own when the cabinet is shaken",
@@ -552,8 +532,6 @@ label = "Check it isn't recalled"
 icon = "search"
 why = "Recalled pieces often come with a free anchoring kit or a refund."
 buy = ""
-cost = "Free"
-time = "2 min"
 tools = []
 steps = [
   "Search the brand and model at cpsc.gov/Recalls",

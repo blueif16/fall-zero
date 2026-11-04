@@ -25,6 +25,14 @@ export const KEYS = RISKS.map(([k]) => k);
 export const worstOf = (statuses) => ["tips", "maybe", "holds"].find((s) => statuses.includes(s)) || "holds";
 export const cap1 = (s) => (s ? s[0].toUpperCase() + s.slice(1) : "");
 
+// A fix's cost and time, from the catalog's numbers; chats saved before them kept the words
+export const costText = (how) => {
+  if (!how?.cost_usd) return how?.cost || "";
+  const [lo, hi] = how.cost_usd;
+  return hi === 0 ? "Free" : lo === hi ? `$${lo}` : `$${lo}–${hi}`;
+};
+export const timeText = (how) => (how?.minutes ? `${how.minutes} min` : how?.time || "");
+
 // --- the fixes and the questions of a photo, merged across its pieces ----------------------------
 
 // The same fix on several pieces ("Strap it to the wall") is one: by its kind when the skill names it

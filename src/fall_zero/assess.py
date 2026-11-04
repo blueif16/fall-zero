@@ -53,7 +53,7 @@ DRAWER_FILL = {"full": 1.0, "half": 0.5, "empty": 0.0}
 # Assumption: what a toddler reaches standing. A thing a child wants that stands higher is climbed for.
 CHILD_REACH_M = 0.75
 ICONS = ("strap", "lock", "top", "distance", "tv", "toy", "weight", "hand", "latch", "search")  # the page draws these
-HOW = ("label", "buy", "cost", "time", "tools", "steps", "avoid", "renter", "source")
+HOW = ("label", "buy", "item", "count", "cost_usd", "minutes", "tools", "steps", "avoid", "renter", "source", "check", "stuck")
 
 # What each child test means when it fails, worst first, by what the child loads
 CHILD_SAYS = {
@@ -254,7 +254,7 @@ def holds(d: Case) -> list[dict]:
 def how(kind: str) -> dict:
     """The practical advice for a kind of fix, straight from the catalog."""
     entry = catalog("fixes")[kind]
-    return {k: entry.get(k, [] if k in ("tools", "steps") else "") for k in HOW}
+    return {k: entry.get(k, [] if k in ("tools", "steps", "stuck") else "") for k in HOW}
 
 
 def fix(key: str, kind: str, **card) -> dict:

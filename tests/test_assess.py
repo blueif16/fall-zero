@@ -156,7 +156,10 @@ def test_every_fix_carries_its_practical_advice_from_the_catalog():
     for c in cards:
         for f in c["fixes"]:
             assert f["icon"] in ICONS and f["kind"] in fixes, f
-            assert f["how"] == {k: fixes[f["kind"]].get(k, [] if k in ("tools", "steps") else "") for k in HOW}
+            listed = fixes[f["kind"]]
+            assert set(f["how"]) == set(HOW), f["kind"]
+            assert all(f["how"][k] == listed[k] for k in HOW if k in listed), f["kind"]  # from the catalog
+            assert not any(f["how"][k] for k in HOW if k not in listed), f["kind"]  # and nothing else
         info = [i for i, f in enumerate(c["fixes"]) if "answer" not in f]
         assert info == list(range(len(c["fixes"]) - len(info), len(c["fixes"])))  # information-only ones last
     kinds = [{f["kind"] for f in c["fixes"]} for c in cards]
@@ -213,3 +216,30 @@ def test_garbled_or_rambling_text_from_the_model_never_reaches_the_page():
     assert judged["fixes"][0]["title"] == catalog("fixes")["strap"]["label"]
     assert [o["label"] for o in judged["questions"][0]["options"]] == ["Yes", "No"]
     assert judged["risks"]["child"]["says"] == "Can fall over"
+
+
+def test_every_fix_kind_has_a_check_and_numbers_for_the_shopping_list():
+    """The page totals what to buy (item x count per piece), the cost and the time from these, and asks the
+    check after "I did this"."""
+    for kind, e in catalog("fixes").items():
+        assert isinstance(e["count"], int) and e["count"] >= 0, kind
+        assert bool(e["item"]) == (e["count"] > 0), kind  # something to buy exactly when there's a count
+        lo, hi = e["cost_usd"]
+        assert 0 <= lo <= hi and (hi > 0 or e["count"] == 0), kind
+        assert isinstance(e["minutes"], int) and e["minutes"] > 0, kind
+        assert all(e["check"][k] for k in ("ask", "holds", "moved")), kind
+        assert "cost" not in e and "time" not in e, kind  # the page formats the numbers; no second copy
+
+
+def test_every_stuck_option_leads_to_a_fix_or_a_handoff_that_exists():
+    fixes, handoffs = catalog("fixes"), catalog("handoffs")
+    for kind, e in fixes.items():
+        options = e.get("stuck", [])
+        if e["tools"]:  # it needs installing, so there are ways to get stuck
+            assert len(options) >= 3, kind
+        assert len({o["key"] for o in options}) == len(options), kind
+        for o in options:
+            assert o["then"] in fixes or o["then"] in handoffs or o["then"] == "", (kind, o["key"])
+            assert o["label"] and len(o["label"]) <= 36 and o["say"] and o["source"], (kind, o["key"])
+    for name, h in handoffs.items():
+        assert h["template"].format(pieces="1", fixes="2", room="3"), name  # only these three to fill

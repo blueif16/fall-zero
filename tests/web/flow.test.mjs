@@ -1,7 +1,7 @@
 // The flow's rules (web/flow.js) on small hand-built rooms: run with `node --test tests/web/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stepOf, nextLine } from "../../web/flow.js";
+import { stepOf, nextLine, costText, timeText } from "../../web/flow.js";
 
 const ALL = (s) => ({ child: s, adult: s, quake: s });
 const risks = (r) => Object.fromEntries(Object.entries(r).map(([k, status]) => [k, { status, says: "" }]));
@@ -117,4 +117,17 @@ test("a fix that settles only one scenario claims neither the room nor a piece h
   const next = nextLine(room(card({ fixes: [locks] })));
   assert.match(next.text, /Drawer locks/);
   assert.doesNotMatch(next.text, /hold/);
+});
+
+test("cost and time read from the catalog's numbers", () => {
+  assert.equal(costText({ cost_usd: [10, 25] }), "$10–25");
+  assert.equal(costText({ cost_usd: [0, 0] }), "Free");
+  assert.equal(costText({ cost_usd: [15, 15] }), "$15");
+  assert.equal(timeText({ minutes: 15 }), "15 min");
+});
+
+test("a chat saved before the numbers keeps its cost and time words", () => {
+  assert.equal(costText({ cost: "$10–20 a set" }), "$10–20 a set");
+  assert.equal(timeText({ time: "20 min" }), "20 min");
+  assert.equal(costText(undefined), "");
 });

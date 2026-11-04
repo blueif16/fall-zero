@@ -13,7 +13,7 @@
 
 import {
   RISKS, WORD, garbled, clip, tidy, itemName, pieceName, fixTitle, RANK, KEYS, worstOf, cap1,
-  fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine,
+  fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine, costText, timeText,
 } from "./flow.js";
 
 const $ = (id) => document.getElementById(id);
@@ -660,7 +660,7 @@ function todoRow(room, g, i, enter) {
   const how = g.f.how || {};
   const meta = [
     room.pieces.length > 1 ? `<span class="who">${badges(g.members.map((m) => m.p))}</span>` : "",
-    chip(how.cost), chip(how.time, ICON.clock, "time"),
+    chip(costText(how)), chip(timeText(how), ICON.clock, "time"),
   ].join("");
   const show = g.done ? "" : `<button class="show-btn" type="button" title="Show it in the simulation">${ICON.play}<span>Show me</span></button>`;
   const did = `<button class="done-btn" type="button">${g.done ? `${ICON.holds}Done` : "I did this"}</button>`;
@@ -1043,7 +1043,7 @@ function howHTML(room, g, p, k) {
   }
   const beside = g.act ? "on-phone" : ""; // a good habit's chip in the chat has no cost or time
   const tools = (how.tools || []).join(" · ");
-  const chips = [chip(how.buy, ICON.bag, "buy"), chip(how.cost, "", beside), chip(how.time, ICON.clock, beside), chip(tools, ICON.wrench, "tool")].join("");
+  const chips = [chip(how.buy, ICON.bag, "buy"), chip(costText(how), "", beside), chip(timeText(how), ICON.clock, beside), chip(tools, ICON.wrench, "tool")].join("");
   const steps = (how.steps || []).slice(0, 4).map((s, i) => `<li><span class="sn">${i + 1}</span><span>${esc(clip(s, 140))}</span></li>`).join("");
   const line = (cls, icon, text) => (text ? `<p class="hl ${cls}" title="${esc(text)}">${icon}<span>${esc(clip(text, 240))}</span></p>` : "");
   return `<div class="how">${title}${chips ? `<div class="hchips">${chips}</div>` : ""}
