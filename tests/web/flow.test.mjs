@@ -77,8 +77,9 @@ test("a safe room's next says it holds and points at another room", () => {
   assert.match(next.text, /another room/i);
 });
 
-test("a room that holds everywhere is safe even with a question open (answers only ever make it safer)", () => {
-  assert.equal(stepOf(room(card({ now: ALL("holds"), questions: [floorQ] }))), "safe");
+test("a room that holds but still has a question is at 'be sure' (assess.py asks only what can change a verdict)", () => {
+  const drawersQ = { key: "drawers", title: "What's in the drawers?", options: [{ label: "Full", value: "full" }] };
+  assert.equal(stepOf(room(card({ now: ALL("holds"), questions: [drawersQ] }))), "sure");
 });
 
 test("a room nothing more can fix, still at risk, says so instead of claiming it holds", () => {

@@ -120,14 +120,13 @@ const counted = (room) => todo(room).filter((g) => g.act && (g.done ? g.members.
 
 const atRisk = (room) => Object.values(roomNow(room)).some((s) => s !== "holds");
 
-// Being sure while a question could still change a verdict (every unanswered question assumes the worst,
-// so a room that holds everywhere has nothing left to learn), then the plan while a fix would make a piece
-// safer, else safe. Fixing and checking are where the person has taken the room.
+// Being sure while a question is open (assess.py asks only what could change a verdict), then the plan
+// while a fix would make a piece safer, else safe. Fixing and checking are where the person has taken it.
 export function stepOf(room) {
   if (!room.pieces.length) return null;
   if (room.checking) return "check";
   if (room.fixing) return "fix";
-  if (!room.skipAsks && atRisk(room) && askGroups(room).length) return "sure";
+  if (!room.skipAsks && askGroups(room).length) return "sure";
   return toDo(room).length ? "plan" : "safe";
 }
 
