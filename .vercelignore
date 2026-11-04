@@ -10,3 +10,4 @@ modal_apps
 .ruff_cache
 .claude
 tools
+CLAUDE.md
