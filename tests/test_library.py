@@ -139,3 +139,42 @@ def test_what_changed_since_last_time():
     assert not any(k == "worse" and n == "tall white bookcase" for k, n in kinds)
     worse = next(c for c in library.changes(before["breakdown"], after["breakdown"]) if c["kind"] == "worse")
     assert worse["scenarios"] == ["child", "adult", "quake"]  # the page shows only those that count for the home
+
+
+def test_the_page_keeps_a_room_up_to_date_and_an_older_check_cant_overwrite_it(local):
+    from fastapi.testclient import TestClient
+
+    from fall_zero import server
+
+    client = TestClient(server.app)
+    for run in ("0000000000a1", "0000000000a2"):
+        (local / "web" / run).mkdir(parents=True)
+        (local / "web" / run / "report.json").write_text(__import__("json").dumps(LIVING | {"image": "still.jpg"}))
+    first = library.save("", library.record(LIVING, [card(n) for n, _, _ in (BOOK, STAND, MIRROR)], run="0000000000a2"))
+    rid = first["id"]
+    tapped = [card("tall white bookcase", CALM, [strap(done=True)], answers={"anchored": "yes"}), card(STAND[0]),
+              card(MIRROR[0])]  # fmt: skip
+    body = {"run": "0000000000a2", "cards": tapped, "extras": {"checked": {"0": {"kind:strap": "2026-11-04"}}}}
+    assert client.put(f"/api/home/rooms/{rid}", json=body).status_code == 200
+    saved = client.get("/api/home").json()["rooms"][0]
+    assert saved["id"] == rid and saved["breakdown"]["pieces"][0]["status"] == CALM
+    assert saved["pieces"][0]["id"] == first["pieces"][0]["id"]  # the same pieces, still
+    assert saved["pieces"][0]["checked"] == {"kind:strap": "2026-11-04"}
+    stale = {"run": "0000000000a1", "cards": [card(n) for n, _, _ in (BOOK, STAND, MIRROR)]}
+    assert client.put(f"/api/home/rooms/{rid}", json=stale).json()["stale"]  # the older card in the chat
+    assert client.get("/api/home").json()["rooms"][0]["breakdown"]["pieces"][0]["status"] == CALM
+    assert client.delete(f"/api/home/rooms/{rid}").status_code == 200
+    assert client.get("/api/home").json()["rooms"] == []
+    assert client.put("/api/home/rooms/abcdefabcdef", json=body).status_code == 404  # a PUT never creates a room
+    assert client.put("/api/home/rooms/..%2Fthreads", json=body).status_code >= 400  # never reaches the store
+
+
+def test_who_is_home_is_kept_for_the_home(local):
+    from fastapi.testclient import TestClient
+
+    from fall_zero import server
+
+    client = TestClient(server.app)
+    assert client.get("/api/home").json()["household"] == {}
+    client.put("/api/home/household", json={"child": "climbing", "quake": "no", "confirmed": True})
+    assert client.get("/api/home").json()["household"] == {"child": "climbing", "quake": "no", "confirmed": True}

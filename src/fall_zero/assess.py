@@ -507,8 +507,10 @@ def card(entry: dict, answers: dict | None = None, simulate_quakes: bool = False
     return assess(entry, answers, simulate_quakes)
 
 
-def assess_all(report: dict, simulate_quakes: bool = False) -> list[dict]:
-    return [card(e, simulate_quakes=simulate_quakes) for e in report["pieces"] if e["status"] in CARD_STATUSES]
+def assess_all(report: dict, simulate_quakes: bool = False, answers: dict[int, dict] | None = None) -> list[dict]:
+    """Every card of a report; `answers` (card index -> answers) starts some from what's already known."""
+    entries = [e for e in report["pieces"] if e["status"] in CARD_STATUSES]
+    return [card(e, (answers or {}).get(i), simulate_quakes) for i, e in enumerate(entries)]
 
 
 # --- pieces the engine can't build ------------------------------------------------------------

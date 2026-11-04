@@ -10,10 +10,15 @@ fixes still in place.
 Records live in the store under homes/<owner>/ (homes/local/ when running locally).
 """
 
+import base64
+import io
 import json
 import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
+
+from PIL import Image
 
 from fall_zero import store
 from fall_zero.assess import CARD_STATUSES, JUDGED_KINDS, RISK_KEYS, judged_icon
@@ -101,7 +106,7 @@ def record(report: dict, cards: list[dict], run: str, previous: dict | None = No
         "updated": now,
         "run": run,
         "thread": thread or (previous or {}).get("thread"),
-        "still": report.get("still"),
+        "still": f"/files/{run}/{Path(report['image']).name}" if report.get("image") else report.get("still"),
         "size": report["size"],
         "pieces": pieces,
         "breakdown": bd,
@@ -219,6 +224,29 @@ def get(owner: str, rid: str) -> dict | None:
 
 def remove(owner: str, rid: str) -> None:
     store.delete(_room_name(owner, rid))
+
+
+def household(owner: str) -> dict:
+    """Who's home, as the person confirmed it (catalog/household.toml's answers)."""
+    body = store.read(f"{folder(owner)}home.json")
+    return json.loads(body) if body else {}
+
+
+def save_household(owner: str, answers: dict) -> None:
+    store.write(f"{folder(owner)}home.json", json.dumps(answers).encode())
+
+
+def photo(rec: dict, side: int = 640) -> str | None:
+    """A room's latest photo, small, as a data URL: what the match step looks at."""
+    name = rec.get("still", "").removeprefix("/files/")
+    path = store.local(f"web/{name}") if name.count("/") == 1 else None
+    if not path:
+        return None
+    img = Image.open(path).convert("RGB")
+    img.thumbnail((side, side))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def rooms(owner: str) -> list[dict]:

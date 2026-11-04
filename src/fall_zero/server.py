@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from fall_zero import agent, meta, room, store, voice
+from fall_zero import agent, knowledge, library, meta, room, store, voice
 from fall_zero.analyze import VIDEO_SUFFIXES, analyze
 from fall_zero.assess import CARD_STATUSES, assess_all, card, trajectory, warm
 from fall_zero.clients import NotConfigured, chat, providers
@@ -33,6 +33,7 @@ ROOT = store.ROOT
 # Each analyzed upload is a run: web/<run>/ holds the photo, still.jpg and report.json; saved chats are
 # threads/<id>.json. Both live in the store (fall_zero/store.py): out/ locally, Vercel Blob when deployed.
 DEPLOYED = bool(os.environ.get("VERCEL"))
+Owner = Annotated[str, Header(alias="X-Owner")]  # the browser: its saved chats and its home
 
 
 @asynccontextmanager
@@ -137,12 +138,16 @@ async def turn(
     context: Annotated[str, Form()] = "",
     media: Annotated[UploadFile | None, File()] = None,
     frame_at_s: Annotated[float | None, Form()] = None,
+    thread: Annotated[str, Form()] = "",
+    owner: Owner = "",
 ) -> StreamingResponse:
     """One chat turn, streamed as NDJSON events:
     step {text} ... report {run, still, cards, report} ... delta {text} ... done {response_id} | error {text}.
     With `media` (a photo or video) the pipeline runs first; without it the agent just answers.
     `context` is the page's current cards (after the user's taps), so follow-ups see them.
-    The page sends a video as its sharpest frame, and `frame_at_s` is where in the video it was."""
+    The page sends a video as its sharpest frame, and `frame_at_s` is where in the video it was.
+    While the pipeline runs, Muse Spark looks for the room in the home's library (`library.py`): a known
+    room's pieces start from what's still true of them, and the report says what changed since."""
     upload = None
     if media and media.filename:
         suffix = Path(media.filename).suffix.lower()
@@ -158,6 +163,7 @@ async def turn(
         try:
             report, image, cards, others = {}, None, None, []
             if upload:
+                recognizing = asyncio.create_task(run_in_threadpool(_recognize, upload, owner))
                 async for kind, value in _analyze_with_steps(upload, upload.parent):
                     if kind == "step":
                         yield _line(type="step", text=value)
@@ -167,8 +173,12 @@ async def turn(
                     report["frame_at_s"] = frame_at_s
                 kept = [f"web/{upload.parent.name}/{f}" for f in (upload.name, image.name, "report.json")]
                 await run_in_threadpool(store.keep, *kept)
+                previous = await recognizing
+                ids = library.match_pieces(previous, report) if previous else {}
+                carried = library.carry(previous, ids, report) if previous else {}
                 yield _line(type="step", text="Shaking it in simulated earthquakes · MuJoCo")
-                cards = await run_in_threadpool(assess_all, report, True)
+                cards = await run_in_threadpool(assess_all, report, True, carried)
+                _remember(owner, upload.parent.name, report, cards, previous, ids, carried, thread)
                 _prepare_scenes(report, cards)
                 others = [p["piece"]["name"] for p in report["pieces"] if p["status"] not in CARD_STATUSES]
                 files = f"/files/{upload.parent.name}"
@@ -263,7 +273,78 @@ def scene_route(body: SceneIn) -> dict:
     return room.scene(_report(body.run), body.answers, body.scenario, body.focus)
 
 
-Owner = Annotated[str, Header(alias="X-Owner")]
+def _recognize(upload: Path, owner: str) -> dict | None:
+    """The home's room this photo shows, if it's one checked before (its record), else None. Never fails a
+    check: a photo the match can't read, or a slow answer, is simply a new room."""
+    try:
+        recent = library.rooms(owner)[:6]
+        photos = [(r["id"], ph) for r in recent if (ph := library.photo(r))]
+        rid = knowledge.match(upload, photos) if photos and upload.suffix.lower() in (".jpg", ".jpeg", ".png") else None
+        return next((r for r in recent if r["id"] == rid), None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _remember(owner, run, report, cards, previous, ids, carried, thread) -> None:
+    """Keep this check in the home's library, and put on the report which room it is and what changed."""
+    try:
+        rec = library.record(report, cards, run, previous=previous, ids=ids, thread=thread or None)
+        library.save(owner, rec)
+    except ValueError:  # no home to keep it in (no owner)
+        return
+    report["room_id"] = rec["id"]
+    if previous:
+        report["known"] = {"name": previous["name"], "since": previous["updated"], "last": previous["breakdown"],
+                           "carried": {str(i): a for i, a in carried.items()},
+                           "changes": library.changes(previous["breakdown"], rec["breakdown"])}  # fmt: skip
+
+
+class RoomIn(BaseModel):
+    run: str
+    cards: list[dict]
+    extras: dict = {}
+    thread: str | None = None
+
+
+def _home(call, *args):
+    try:
+        return call(*args)
+    except ValueError as exc:  # a bad owner or room id
+        raise HTTPException(404, str(exc)) from exc
+
+
+@app.get("/api/home")
+def get_home(owner: Owner = "") -> dict:
+    """The home: who's home, and every room in its library, newest check first."""
+    return {"household": _home(library.household, owner), "rooms": _home(library.rooms, owner)}
+
+
+@app.put("/api/home/household")
+def put_household(answers: Annotated[dict, Body()], owner: Owner = "") -> dict:
+    _home(library.save_household, owner, answers)
+    return answers
+
+
+@app.put("/api/home/rooms/{rid}")
+def put_room(rid: str, body: RoomIn, owner: Owner = "") -> dict:
+    """The page saves a room after every tap (answers, fixes done and checked). Only its latest check: an
+    older card of the same room further up the chat can't overwrite it."""
+    previous = _home(library.get, owner, rid)
+    if previous is None:
+        raise HTTPException(404, "unknown room")
+    if previous["run"] != body.run:
+        return {"stale": True, "id": rid}
+    ids = {i: p["id"] for i, p in enumerate(previous["pieces"])}
+    rec = library.record(_report(body.run), body.cards, body.run, previous=previous, ids=ids, extras=body.extras,
+                         thread=body.thread)  # fmt: skip
+    _home(library.save, owner, rec)
+    return {"stale": False, "id": rid}
+
+
+@app.delete("/api/home/rooms/{rid}")
+def delete_room(rid: str, owner: Owner = "") -> dict:
+    _home(library.remove, owner, rid)
+    return {"deleted": rid}
 
 
 def _folder(owner: str) -> str:

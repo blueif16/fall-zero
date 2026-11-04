@@ -113,6 +113,18 @@ low), `hand` (keep everyday things within reach), `latch` (latch doors against s
 `question` with two to four options, each with its `after` statuses. Otherwise set the question to null.
 `basis` names the guidance you relied on.
 
+## Match
+
+You get a new photo of a room, then photos of rooms already checked in this home, each with its id. Say
+which earlier room the new photo shows (`room`), or `none`.
+
+It is the same room when the space itself is the same: the walls, windows, doors, floor and anything
+built in line up, even from another angle, in other light, or with furniture moved, added or taken away.
+Furniture alone doesn't make it the same room: the same white dresser in another bedroom is another
+room. When you can't tell, answer `none`, because a wrong match carries one room's answers into another.
+
+Write `why` first, in at most 20 words: the fixed features that match or differ. Then `room`.
+
 ## References
 
 Read only the ones the piece needs:
