@@ -10,7 +10,9 @@
 # and `minutes`. `check`: the ten-second test after the fix (`ask`, and the `holds` and `moved` buttons).
 # `stuck`: the "I'm stuck" options of the kinds that install something (docs/FLOW.md S4): `label` is the
 # chip, `say` what to do instead, `then` a fix kind here, "landlord" or "handyman" (catalog/handoffs.toml),
-# or "" for none.
+# or "" for none. Listed by how often each stops people (Consumer Reports surveys 2018, 2021: holes in the
+# wall 25-29%, holes in the furniture 13-16%, the stud 9-14%, installing 9-13%); the page shows the first
+# few. `moved = true`: what to do when the check failed ("it moved"), shown first after one.
 #
 # Research behind it (2026-10): CPSC 2023 tip-over report (Feb 2024): 17,800 ED-treated injuries a year,
 # 71% of deaths children (55% aged 1-3, most of the known cases climbing), 26% adults 60+, 44% of deaths
@@ -48,6 +50,41 @@ holds = "It doesn't move"
 moved = "It moved or a strap slipped"
 
 [[strap.stuck]]
+key = "renting"
+label = "I rent"
+say = "Ask your landlord: two small screw holes per piece, for a child's safety, filled when you move out. The message is ready to send. If they say no, use the no-drill option: two tension poles to the ceiling and a stopper strip."
+then = "landlord"
+source = "NSW Government, toppling furniture and TVs (ask, explain, offer to repair, get it in writing): https://www.nsw.gov.au/legal-and-justice/consumer-rights-and-protection/safety/other-consumer-products/toppling-furniture-and-televisions; Tokyo Fire Department handbook: https://www.tfd.metro.tokyo.lg.jp/content/000010472.pdf"
+
+[[strap.stuck]]
+key = "thin_back"
+label = "The back is thin or has no holes"
+say = "Skip the thin back sheet: it's only stapled or slotted in. Screw the furniture bracket into the top panel, a side panel or a solid top rail, from behind, with the kit's short screws so they don't come through."
+then = ""
+source = "RH anti-tip kit instructions (solid wood, not the back panel): https://images.rhbabyandchild.com/bc/content/catalog/product/pdfs/rhbc_prod732276_info.pdf; CPSC Anchor It, how to install a kit (not a stapled-on back): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
+
+[[strap.stuck]]
+key = "no_stud"
+label = "There's no stud where it stands"
+say = "Slide the piece so both straps reach studs; they're 16 or 24 inches apart. Or screw a 1x4 board across the two nearest studs behind it and strap into the board. Never into bare drywall."
+then = ""
+source = "CPSC Anchor It, how to install a kit (move the piece to a stud): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/; InspectandTest, toggle bolts (a ledger across two studs): https://inspectandtest.net/guides/toggle-bolts/"
+
+[[strap.stuck]]
+key = "someone_else"
+label = "I'd rather someone else did it"
+say = "Send a handyman the work order: the pieces, two straps each, screwed into studs, not bare drywall. Ask for every piece in one visit. Work done by someone else gets finished more often."
+then = "handyman"
+source = "Currin 2011, tasks given to outside providers got done more often: https://doi.org/10.1111/j.1741-6612.2011.00545.x; CPSC Anchor It, how to install a kit: https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
+
+[[strap.stuck]]
+key = "partner_says_no"
+label = "Someone at home says no"
+say = "Show them the fall here: it takes seconds, even with someone watching. The strap hides behind the piece and two small holes fill with spackle. Still no? Use tension poles and a stopper strip, and keep beds clear."
+then = ""
+source = "CPSC \"Even when you're watching\" PSA: https://www.cpsc.gov/Newsroom/Video/Anchor-It-Even-When-Youre-Watching-Public-Service-Announcement; Tokyo Fire Department handbook: https://www.tfd.metro.tokyo.lg.jp/content/000010472.pdf"
+
+[[strap.stuck]]
 key = "metal_studs"
 label = "My wall has metal studs"
 say = "A wood screw strips in steel. Buy toggle anchors made for metal studs, drill the hole size on the pack through the drywall into the stud's center, set the toggle and bolt the wall bracket to it."
@@ -69,20 +106,6 @@ then = "handyman"
 source = "CPSC Anchor It, how to install a kit: https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/; CPSC Anchor It, what you'll need: https://www.anchorit.gov/how-to-anchor/what-youll-need/"
 
 [[strap.stuck]]
-key = "no_stud"
-label = "There's no stud where it stands"
-say = "Slide the piece so both straps reach studs; they're 16 or 24 inches apart. Or screw a 1x4 board across the two nearest studs behind it and strap into the board. Never into bare drywall."
-then = ""
-source = "CPSC Anchor It, how to install a kit (move the piece to a stud): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/; InspectandTest, toggle bolts (a ledger across two studs): https://inspectandtest.net/guides/toggle-bolts/"
-
-[[strap.stuck]]
-key = "thin_back"
-label = "The back is thin or has no holes"
-say = "Skip the thin back sheet: it's only stapled or slotted in. Screw the furniture bracket into the top panel, a side panel or a solid top rail, from behind, with the kit's short screws so they don't come through."
-then = ""
-source = "RH anti-tip kit instructions (solid wood, not the back panel): https://images.rhbabyandchild.com/bc/content/catalog/product/pdfs/rhbc_prod732276_info.pdf; CPSC Anchor It, how to install a kit (not a stapled-on back): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
-
-[[strap.stuck]]
 key = "not_against_wall"
 label = "It isn't against a wall"
 say = "Turn it so its back or one end meets a wall, and strap there. A room divider: screw L-brackets from its 4 bottom corners into the floor (masonry screws in concrete), or bolt two units back to back."
@@ -97,13 +120,6 @@ then = "handyman"
 source = "IKEA anchoring guide (check for wires and pipes): https://www.ikea.com/us/en/files/pdf/d4/4a/d44a59ef/just_a_moment_guide_2025.pdf"
 
 [[strap.stuck]]
-key = "renting"
-label = "I rent"
-say = "Ask your landlord: two small screw holes per piece, for a child's safety, filled when you move out. The message is ready to send. If they say no, use the no-drill option: two tension poles to the ceiling and a stopper strip."
-then = "landlord"
-source = "NSW Government, toppling furniture and TVs (ask, explain, offer to repair, get it in writing): https://www.nsw.gov.au/legal-and-justice/consumer-rights-and-protection/safety/other-consumer-products/toppling-furniture-and-televisions; Tokyo Fire Department handbook: https://www.tfd.metro.tokyo.lg.jp/content/000010472.pdf"
-
-[[strap.stuck]]
 key = "no_drill"
 label = "Can't drill: asbestos, not allowed"
 say = "Never drill a wall that may hold asbestos. Fit two tension poles from the top's back corners to a strong ceiling (or a board across it), and a stopper strip under the whole front edge. Not for shallow pieces."
@@ -111,25 +127,12 @@ then = "distance"
 source = "Tokyo Fire Department handbook (poles at the back of both sides, a stopper strip end to end, a board on a weak ceiling): https://www.tfd.metro.tokyo.lg.jp/content/000010472.pdf; Shinjuku City: https://www.city.shinjuku.lg.jp/anzen/kikikanri01_english07.html; US EPA, asbestos in the home (leave it undisturbed): https://www.epa.gov/asbestos/protect-your-family-exposures-asbestos"
 
 [[strap.stuck]]
-key = "partner_says_no"
-label = "Someone at home says no"
-say = "Show them the fall here: it takes seconds, even with someone watching. The strap hides behind the piece and two small holes fill with spackle. Still no? Use tension poles and a stopper strip, and keep beds clear."
-then = ""
-source = "CPSC \"Even when you're watching\" PSA: https://www.cpsc.gov/Newsroom/Video/Anchor-It-Even-When-Youre-Watching-Public-Service-Announcement; Tokyo Fire Department handbook: https://www.tfd.metro.tokyo.lg.jp/content/000010472.pdf"
-
-[[strap.stuck]]
 key = "wont_stay"
+moved = true
 label = "It still moves after strapping"
 say = "A screw that pulls out missed the stud: refit it in the stud's center, feeling resistance all the way in. A slack strap: pull it tight. A plastic strap: replace it with metal or nylon. Re-check after moving the piece."
 then = ""
 source = "CPSC Anchor It, how to install a kit: https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/; Consumer Reports anchor-kit tests (plastic straps held least): https://nbcdfw.com/news/consumer-reports/furniture-anchors-prevent-deaths-and-injuries-consumer-reports-put-kits-to-the-test/3702524/"
-
-[[strap.stuck]]
-key = "someone_else"
-label = "I'd rather someone else did it"
-say = "Send a handyman the work order: the pieces, two straps each, screwed into studs, not bare drywall. Ask for every piece in one visit. Work done by someone else gets finished more often."
-then = "handyman"
-source = "Currin 2011, tasks given to outside providers got done more often: https://doi.org/10.1111/j.1741-6612.2011.00545.x; CPSC Anchor It, how to install a kit: https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
 
 [bracket]
 label = "The range's anti-tip bracket"
@@ -166,6 +169,27 @@ then = ""
 source = "GE Appliances anti-tip bracket instructions: https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf; Midea range installation instructions: https://www.midea.com/content/dam/midea-aem/us/ranges/mes30s2ast/MES30-Installation-Instructions-Electric.pdf; Amana range installation instructions: https://www.amana.com/content/dam/global/documents/202204/installation-instructions-w11603122-revA.pdf"
 
 [[bracket.stuck]]
+key = "renting"
+label = "I rent"
+say = "The range belongs to the landlord, and the bracket is part of installing it safely. Ask them to fit it, or to order the bracket for this model so you can. The message is ready to send."
+then = "landlord"
+source = "GE Appliances anti-tip bracket instructions (the range must be secured by the bracket): https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf; NSW Government, toppling furniture and TVs: https://www.nsw.gov.au/legal-and-justice/consumer-rights-and-protection/safety/other-consumer-products/toppling-furniture-and-televisions"
+
+[[bracket.stuck]]
+key = "cant_move"
+label = "I can't slide the range out"
+say = "A range is heavy and may have a gas line behind it. Get a second person to help, or ask a handyman or appliance installer to fit the bracket. Don't bend or move a gas line yourself: that's for a qualified technician."
+then = "handyman"
+source = "Amana range installation instructions (gas changes by a qualified technician): https://www.amana.com/content/dam/global/documents/202204/installation-instructions-w11603122-revA.pdf"
+
+[[bracket.stuck]]
+key = "off_wall"
+label = "The range doesn't reach the wall"
+say = "Screw the bracket to the floor where the range's back will stand, lined up with its back and side, not against the wall. GE requires the floor mount whenever the bracket can't touch the wall."
+then = ""
+source = "GE Appliances anti-tip bracket instructions: https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf"
+
+[[bracket.stuck]]
 key = "tile_concrete"
 label = "The floor is tile or concrete"
 say = "Drill with a masonry bit and fix it as your range's manual says for concrete (GE: a 5/32-inch hole 2 inches deep, then the kit's screws; Midea: sleeve anchors you buy). Unsure about the tile? Ask a handyman."
@@ -180,32 +204,12 @@ then = ""
 source = "GE Appliances anti-tip bracket instructions: https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf"
 
 [[bracket.stuck]]
-key = "off_wall"
-label = "The range doesn't reach the wall"
-say = "Screw the bracket to the floor where the range's back will stand, lined up with its back and side, not against the wall. GE requires the floor mount whenever the bracket can't touch the wall."
-then = ""
-source = "GE Appliances anti-tip bracket instructions: https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf"
-
-[[bracket.stuck]]
 key = "still_lifts"
+moved = true
 label = "The back still lifts"
 say = "The foot isn't under the bracket. Slide the range out, check the bracket is screwed down, clear anything behind, and push it fully back: more than 2 inches from the wall and the foot can miss. Never remove the leveling legs."
 then = ""
 source = "Amana range installation instructions: https://www.amana.com/content/dam/global/documents/202204/installation-instructions-w11603122-revA.pdf; GE Appliances anti-tip bracket instructions: https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf"
-
-[[bracket.stuck]]
-key = "cant_move"
-label = "I can't slide the range out"
-say = "A range is heavy and may have a gas line behind it. Get a second person to help, or ask a handyman or appliance installer to fit the bracket. Don't bend or move a gas line yourself: that's for a qualified technician."
-then = "handyman"
-source = "Amana range installation instructions (gas changes by a qualified technician): https://www.amana.com/content/dam/global/documents/202204/installation-instructions-w11603122-revA.pdf"
-
-[[bracket.stuck]]
-key = "renting"
-label = "I rent"
-say = "The range belongs to the landlord, and the bracket is part of installing it safely. Ask them to fit it, or to order the bracket for this model so you can. The message is ready to send."
-then = "landlord"
-source = "GE Appliances anti-tip bracket instructions (the range must be secured by the bracket): https://www.geappliances.com/content/migrated-root-images/infobase/31-10671_anti_tip_install.pdf; NSW Government, toppling furniture and TVs: https://www.nsw.gov.au/legal-and-justice/consumer-rights-and-protection/safety/other-consumer-products/toppling-furniture-and-televisions"
 
 [tv_strap]
 label = "Strap the TV"
@@ -234,18 +238,11 @@ holds = "The straps stop it"
 moved = "It tipped or a strap gave"
 
 [[tv_strap.stuck]]
-key = "no_holes"
-label = "My TV has no holes on the back"
-say = "Most flat TVs have threaded mount holes on the back. An older, deeper TV with none needs a different kind of strap: take its model to a hardware store and ask for one that fits."
+key = "no_wall_holes"
+label = "I can't put holes in the wall"
+say = "Strap the TV to the back of its stand: the screws go into your furniture, not the wall. Use a solid top or side, not a thin back panel, and keep the stand low and wide with the TV pushed back."
 then = ""
-source = "CPSC Anchor It, what you'll need (TVs): https://www.anchorit.gov/how-to-anchor/what-youll-need/"
-
-[[tv_strap.stuck]]
-key = "bolts_dont_fit"
-label = "The bolts don't fit my TV"
-say = "Thread each bolt in by hand to find the size: M4, M5, M6 or M8. Use the shortest one that grips well, since a bolt too long can damage the TV. A hardware store sells metric bolts if none in the kit fit."
-then = ""
-source = "Sanus A701 TV anti-tip strap instructions: https://accents.sanus.com/assets/products/a701/documents/A701_IM_6904_002050_Rev_00.pdf"
+source = "CPSC Anchor It, what you'll need (anchor the TV to the wall or to the furniture): https://www.anchorit.gov/how-to-anchor/what-youll-need/; CPSC Anchor It, how to install a kit (not thin materials): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
 
 [[tv_strap.stuck]]
 key = "on_dresser"
@@ -253,6 +250,20 @@ label = "The TV is on a dresser"
 say = "Move it to a low stand made for a TV: a child climbs the drawers to reach it, the most common deadly combination. Then strap the TV to that stand. Keeping it on the dresser? Strap the dresser to the wall as well."
 then = "moved"
 source = "CPSC 2023 tip-over report: https://www.cpsc.gov/s3fs-public/2023_Annual_Tip_Over_Report_Posted_2024Feb_FINAL_0.pdf; CPSC Anchor It, what you'll need (furniture designed to hold a TV): https://www.anchorit.gov/how-to-anchor/what-youll-need/"
+
+[[tv_strap.stuck]]
+key = "no_holes"
+label = "My TV has no holes on the back"
+say = "Most flat TVs have threaded mount holes on the back. An older, deeper TV with none needs a different kind of strap: take its model to a hardware store and ask for one that fits."
+then = ""
+source = "CPSC Anchor It, what you'll need (TVs): https://www.anchorit.gov/how-to-anchor/what-youll-need/"
+
+[[tv_strap.stuck]]
+key = "partner_says_no"
+label = "Someone at home says no"
+say = "Show them the fall here: TVs are in nearly half of tip-over deaths. Strapping the TV to its stand needs no holes in the wall, and the straps hide behind it."
+then = ""
+source = "CPSC 2023 tip-over report (47% of deaths involve a TV): https://www.cpsc.gov/s3fs-public/2023_Annual_Tip_Over_Report_Posted_2024Feb_FINAL_0.pdf"
 
 [[tv_strap.stuck]]
 key = "metal_studs"
@@ -269,11 +280,11 @@ then = ""
 source = "CPSC Anchor It, how to install a kit: https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
 
 [[tv_strap.stuck]]
-key = "no_wall_holes"
-label = "I can't put holes in the wall"
-say = "Strap the TV to the back of its stand: the screws go into your furniture, not the wall. Use a solid top or side, not a thin back panel, and keep the stand low and wide with the TV pushed back."
+key = "bolts_dont_fit"
+label = "The bolts don't fit my TV"
+say = "Thread each bolt in by hand to find the size: M4, M5, M6 or M8. Use the shortest one that grips well, since a bolt too long can damage the TV. A hardware store sells metric bolts if none in the kit fit."
 then = ""
-source = "CPSC Anchor It, what you'll need (anchor the TV to the wall or to the furniture): https://www.anchorit.gov/how-to-anchor/what-youll-need/; CPSC Anchor It, how to install a kit (not thin materials): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
+source = "Sanus A701 TV anti-tip strap instructions: https://accents.sanus.com/assets/products/a701/documents/A701_IM_6904_002050_Rev_00.pdf"
 
 [[tv_strap.stuck]]
 key = "flimsy_stand"
@@ -283,14 +294,8 @@ then = "handyman"
 source = "CPSC Anchor It, what you'll need (TV stands and wall mounts): https://www.anchorit.gov/how-to-anchor/what-youll-need/; CPSC Anchor It, how to install a kit (a thick, solid spot): https://www.anchorit.gov/how-to-anchor/how-to-install-a-kit/"
 
 [[tv_strap.stuck]]
-key = "partner_says_no"
-label = "Someone at home says no"
-say = "Show them the fall here: TVs are in nearly half of tip-over deaths. Strapping the TV to its stand needs no holes in the wall, and the straps hide behind it."
-then = ""
-source = "CPSC 2023 tip-over report (47% of deaths involve a TV): https://www.cpsc.gov/s3fs-public/2023_Annual_Tip_Over_Report_Posted_2024Feb_FINAL_0.pdf"
-
-[[tv_strap.stuck]]
 key = "wont_stay"
+moved = true
 label = "The strap is slack or slipped"
 say = "Push the TV back, pull each strap tight through its buckle, and check the screws at both ends are snug. A worn or plastic strap: replace it with metal or nylon. Re-check after moving the stand."
 then = ""
@@ -329,6 +334,7 @@ source = "Evenflo cabinet and drawer latch instructions (multi-purpose strap lat
 
 [[locks.stuck]]
 key = "falls_off"
+moved = true
 label = "The sticky latch falls off"
 say = "Clean and dry both spots, press hard, and let it set before first use (Evenflo says 48 hours). Still falls off? Use latches that screw into the drawer, as Evenflo's own instructions require."
 then = ""
@@ -336,6 +342,7 @@ source = "Evenflo cabinet and drawer latch instructions: https://www.evenflo.com
 
 [[locks.stuck]]
 key = "child_opens"
+moved = true
 label = "My child opens the latches"
 say = "Latches only slow a child down, and makers say to stop using them once a child can defeat them. Strap the piece to the wall, so an open drawer can't pull it over."
 then = "strap"
@@ -522,6 +529,7 @@ source = "Earthquake Country Alliance, Secure Your Space (museum putty): https:/
 
 [[latches.stuck]]
 key = "cabinet_rocks"
+moved = true
 label = "The cabinet itself could tip"
 say = "Latches keep the doors shut, not the cabinet up. Screw the cabinet to the wall with L-brackets or straps into studs: the Tokyo Fire Department rates screwing it to the wall the most effective fix."
 then = "strap"

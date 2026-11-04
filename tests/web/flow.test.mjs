@@ -1,7 +1,7 @@
 // The flow's rules (web/flow.js) on small hand-built rooms: run with `node --test tests/web/`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups } from "../../web/flow.js";
+import { stepOf, nextLine, costText, timeText, shoppingList, planOutcome, rowHow, fixGroups, handoffText, stuckOptions, statusWith } from "../../web/flow.js";
 
 const ALL = (s) => ({ child: s, adult: s, quake: s });
 const risks = (r) => Object.fromEntries(Object.entries(r).map(([k, status]) => [k, { status, says: "" }]));
@@ -188,4 +188,61 @@ test("a row from a chat saved before the numbers shows its words as they were", 
   const h = rowHow(fixGroups(room(card({ fixes: [old] }), card({ name: "B", fixes: [old] })))[0]);
   assert.equal(costText(h), "$10–25");
   assert.equal(timeText(h), "15 min");
+});
+
+test("a room isn't left fixing or checking a fix that's already done, or no longer there", () => {
+  const r = room(card({ now: ALL("holds"), fixes: [strapN(ALL("holds"), true)] }));
+  r.fixing = "kind:strap";
+  assert.equal(stepOf(r), "safe");
+  r.fixing = null;
+  r.checking = "kind:gone";
+  assert.equal(stepOf(r), "safe");
+});
+
+test("a hand-off message is filled with the room, the pieces and the fix, and nothing left to fill", () => {
+  const r = room(card({ name: "tall white bookcase", fixes: [strapN(ALL("holds"))] }), card({ name: "TV stand", fixes: [strapN(ALL("holds"))] }));
+  r.ev.report.room = "living room";
+  const g = fixGroups(r)[0];
+  const text = handoffText("Hi, in the {room}: {pieces}. The fix: {fixes}.", r, g);
+  assert.equal(text, "Hi, in the living room: Tall white bookcase and TV stand. The fix: Strap it to the wall.");
+});
+
+test("a row's stuck options are its fix kind's, once each, even when several pieces share it", () => {
+  const stuck = [{ key: "metal_studs", label: "Metal studs", say: "Use toggles", then: "" }, { key: "renting", label: "I rent", say: "Ask", then: "landlord" }];
+  const f = { ...strapN(ALL("holds")), how: { ...strapN(ALL("holds")).how, stuck } };
+  const g = fixGroups(room(card({ fixes: [f] }), card({ name: "B", fixes: [f] })))[0];
+  assert.deepEqual(stuckOptions(g).map((o) => o.key), ["metal_studs", "renting"]);
+  assert.deepEqual(stuckOptions(fixGroups(room(card({ fixes: [moveN] })))[0]), []);
+});
+
+test("a fix handed to someone else isn't next; what's left to do yourself is", () => {
+  const locks = { key: "locks", kind: "locks", title: "Drawer locks", answer: { locks: true }, done: false,
+    after: { child: "holds", adult: "tips", quake: "tips" }, how: {} };
+  const r = room(card({ fixes: [strapN(ALL("holds")), locks] }));
+  r.handed = { "kind:strap": "landlord" };
+  assert.match(nextLine(r).text, /Drawer locks/);
+});
+
+test("with only handed-off fixes left, the room is waiting on them, and says who", () => {
+  const r = room(card({ fixes: [strapN(ALL("holds"))] }));
+  r.handed = { "kind:strap": "landlord" };
+  const next = nextLine(r);
+  assert.equal(next.step, "plan");
+  assert.match(next.text, /landlord/);
+  assert.match(next.text, /Strap it to the wall/);
+});
+
+test("'before' shows each piece as it was saved just before the fix was checked", () => {
+  const r = room(card({ now: ALL("holds"), fixes: [strapN(ALL("holds"), true)] }));
+  const g = fixGroups(r)[0];
+  const was = { key: `was:${g.key}`, was: true, before: { 0: { child: "tips", adult: "maybe", quake: "tips" } } };
+  assert.equal(statusWith(r.pieces[0], "adult", was), "maybe");
+  assert.equal(statusWith(r.pieces[0], "adult", null), "holds");
+});
+
+test("after a failed check, the stuck options about it moving come first", () => {
+  const stuck = [{ key: "renting", label: "I rent", say: "", then: "" }, { key: "wont_stay", label: "It still moves", say: "", then: "", moved: true }];
+  const g = fixGroups(room(card({ fixes: [{ ...strapN(ALL("holds")), how: { stuck } }] })))[0];
+  assert.deepEqual(stuckOptions(g).map((o) => o.key), ["renting", "wont_stay"]);
+  assert.deepEqual(stuckOptions(g, true).map((o) => o.key), ["wont_stay", "renting"]);
 });

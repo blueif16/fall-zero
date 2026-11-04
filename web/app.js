@@ -14,7 +14,7 @@
 import {
   RISKS, WORD, garbled, clip, tidy, itemName, pieceName, fixTitle, RANK, KEYS, worstOf, cap1,
   fixGroups, statusWith, roomWith, roomNow, todo, askGroups, plan, bestScenario, STEPS, stepOf, nextLine, costText, timeText,
-  shoppingList, planOutcome, rowHow,
+  shoppingList, planOutcome, rowHow, stuckOptions, handoffText,
 } from "./flow.js";
 
 const $ = (id) => document.getElementById(id);
@@ -535,7 +535,8 @@ class BotMessage {
     const cards = this.el.querySelector(".cards");
     // One card of choices for the photo (questions and fixes, for the room or its one piece). The
     // simulation and the details open in the panel, from a scenario, an outline or a fix's "Show me".
-    const room = { ev, pieces: [], el: document.createElement("article"), figure: top.querySelector(".still") };
+    const room = { ev, pieces: [], el: document.createElement("article"), figure: top.querySelector(".still"),
+      handed: (ev.handed ??= {}), was: (ev.was ??= {}) }; // saved with the chat: what's with someone else, how it was
     ev.cards.forEach((card, index) => {
       const p = { run: ev.run, index, n: pieces.length + 1, card, still: ev.still, size: ev.size, record: ev, room, el: room.el };
       p.marker = top.querySelector(`[data-piece="${index}"]`);
@@ -692,13 +693,18 @@ function todoRow(room, g, i, enter) {
     room.pieces.length > 1 ? `<span class="who">${badges(g.members.map((m) => m.p))}</span>` : "",
     chip(costText(how)), chip(timeText(how), ICON.clock, "time"),
   ].join("");
+  const checked = g.done && g.members.map((m) => m.p.card.checked?.[g.key]).find(Boolean);
   const show = g.done ? "" : `<button class="show-btn" type="button" title="Show it in the simulation">${ICON.play}<span>Show me</span></button>`;
-  const did = `<button class="done-btn" type="button">${g.done ? `${ICON.holds}Done` : "I did this"}</button>`;
+  const did = g.done ? `<button class="done-btn" type="button">${ICON.holds}Done</button>`
+    : g.f.how?.steps?.length ? `<button class="fix-btn" type="button">Fix it</button>`
+    : `<button class="done-btn" type="button">I did this</button>`;
   return `<div class="trow${g.done ? " done" : ""}${e.cls}"${e.style} data-g="${i}">
     <span class="ficon">${g.done ? ICON.holds : fixIcon(g.f)}</span>
-    <div class="tt"><div class="ft">${esc(g.title)}</div>${meta ? `<div class="tm">${meta}</div>` : ""}</div>
+    <div class="tt"><div class="ft">${esc(g.title)}</div>${meta || checked ? `<div class="tm">${meta}${checked ? chip(`Checked ${day(checked)}`, ICON.holds, "checked") : ""}</div>` : ""}</div>
     <div class="acts">${show}${did}</div></div>`;
 }
+
+const day = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
 // Above the to-do list: everything to buy for the fixes not done yet, and what they cost and take in all
 function shopHTML(room) {
@@ -734,11 +740,11 @@ function trackHTML(room, step, asks) {
   const at = STEPS.indexOf(step);
   const steps = TRACK.map(([key, label], i) => {
     const state = i < at ? "done" : i === at ? "now" : "";
-    const tap = (key === "sure" && asks.length && step !== "sure") || (key === "plan" && step === "sure");
+    const tap = (key === "sure" && asks.length && step !== "sure") || (key === "plan" && step !== "plan" && step !== "safe");
     const inner = `<i>${state === "done" ? ICON.holds : i + 1}</i><b>${label}</b>`;
     return `<li class="${state}">${tap ? `<button type="button" data-step="${key}">${inner}</button>` : `<span>${inner}</span>`}</li>`;
   }).join("");
-  const next = nextLine(room);
+  const next = step === "fix" || step === "check" ? { text: "", pieces: [] } : nextLine(room);
   const g = next.key && room.groups.find((x) => x.key === next.key);
   const icon = step === "sure" ? ICON.ask : step === "safe" ? (next.text.startsWith("Everything") ? ICON.holds : ICON.ask) : g ? fixIcon(g.f) : ICON.wrench;
   const who = room.pieces.length > 1 && next.pieces.length ? `<span class="who">${badges(next.pieces.map((n) => room.pieces.find((p) => p.n === n)))}</span>` : "";
@@ -757,11 +763,158 @@ function goNext(room) {
     q?.classList.add("flash");
   } else if (next.step === "plan") {
     const g = room.groups.find((x) => x.key === next.key);
-    if (g) showFix(room, g);
+    if (g && !room.handed[g.key] && g.f.how?.steps?.length) startFix(room, g);
+    else if (g) showFix(room, g);
   } else if (next.step === "safe") {
     if (next.text.startsWith("Everything")) els.file.click();
     else els.text.focus();
   }
+}
+
+// --- fixing it and checking it, in the card --------------------------------------------------------
+
+let HANDOFFS = {}; // skill/catalog/handoffs.toml: who else can say yes or do it
+fetch("/api/handoffs").then((r) => r.json()).then((h) => (HANDOFFS = h)).catch(() => {});
+const STUCK_SHOWN = 6;
+
+const cardHead = (room, g, small, icon) => `<div class="fhead"><span class="ficon">${icon}</span>
+  <div class="fh"><small>${small}</small><b>${esc(g.title)}</b></div>
+  ${room.pieces.length > 1 ? `<span class="who">${badges(g.members.filter((m) => m.f.answer).map((m) => m.p))}</span>` : ""}
+  <button class="fback" type="button" data-act="plan" title="Back to the plan">${ICON.close}</button></div>`;
+
+// One fix, step by step: what to buy for it, its steps with the current one lit, then "Done, check it".
+// "I'm stuck" lists the real reasons people stop here, each with what to do instead.
+function fixHTML(room, g) {
+  const how = g.f.how || {};
+  const steps = how.steps || [];
+  const i = Math.min(room.fixStep || 0, steps.length - 1);
+  const n = g.members.filter((m) => m.f.answer && !m.f.done).length;
+  const sum = rowHow(g) || {};
+  const buy = how.count > 0 && how.item ? `${how.count * n} × ${how.item}` : how.buy;
+  const chips = [chip(buy, ICON.bag, "buy"), chip(costText(sum)), chip(timeText(sum), ICON.clock, "time"), chip((how.tools || []).join(" · "), ICON.wrench, "tool")].join("");
+  const list = steps.map((t, j) => `<li class="${j < i ? "done" : j === i ? "now" : ""}"><span class="sn">${j < i ? ICON.holds : j + 1}</span><span>${esc(clip(t, 160))}</span></li>`).join("");
+  const nav = `${i > 0 ? `<button type="button" data-act="prev">Back</button>` : ""}
+    ${i < steps.length - 1 ? `<button class="go" type="button" data-act="next">Next step</button>` : `<button class="go" type="button" data-act="check">${ICON.holds}Done, check it</button>`}`;
+  return `<section class="block fixing">${cardHead(room, g, "Fix it", fixIcon(g.f))}
+    ${chips ? `<div class="hchips">${chips}</div>` : ""}<ol class="fsteps">${list}</ol><div class="fnav">${nav}</div>
+    ${how.avoid ? `<p class="hl avoid">${ICON.tips}<span>${esc(clip(how.avoid, 200))}</span></p>` : ""}
+    ${stuckOptions(g).length ? `<button class="stuck-btn${room.stuckOpen ? " on" : ""}" type="button" data-act="stuck">${ICON.ask}I'm stuck</button>` : ""}
+    ${room.stuckOpen ? stuckHTML(room, g) : ""}</section>`;
+}
+
+function stuckHTML(room, g) {
+  const opts = stuckOptions(g, room.stuckFromCheck);
+  const shown = room.stuckMore || opts.length <= STUCK_SHOWN + 1 ? opts : opts.slice(0, STUCK_SHOWN);
+  const pick = opts.find((o) => o.key === room.stuckPick);
+  const chips = shown.map((o) => `<button type="button" class="schip${o === pick ? " on" : ""}" data-stuck="${esc(o.key)}">${esc(o.label)}</button>`).join("")
+    + (shown.length < opts.length ? `<button class="more" type="button" data-act="stuck-more">${opts.length - shown.length} more</button>` : "");
+  let say = "";
+  if (pick) {
+    const other = pick.then && fixGroups(room).find((x) => x.f.kind === pick.then && x.key !== g.key && !x.done);
+    const to = HANDOFFS[pick.then];
+    const then = to && room.handoffTo === pick.then ? "" // its message is open below
+      : to ? `<button class="go" type="button" data-act="handoff" data-to="${esc(pick.then)}">${esc(to.label)}</button>`
+      : other ? `<button class="go" type="button" data-act="switch" data-to="${esc(other.key)}">${fixIcon(other.f)}Do this instead: ${esc(other.title)}</button>` : "";
+    say = `<div class="ssay"><p>${esc(pick.say)}</p>${then}<small class="src" title="${esc(pick.source || "")}">Source: ${esc(clip(pick.source || "", 70))}</small></div>`;
+  }
+  const hand = room.handoffTo && HANDOFFS[room.handoffTo];
+  const handoff = hand ? `<div class="handoff"><b>${esc(hand.label)}</b><small>${esc(hand.intro)}</small>
+    <pre class="hmsg">${esc(handoffText(hand.template, room, g))}</pre>
+    <div class="fnav"><button type="button" data-act="copy">Copy</button><button class="go" type="button" data-act="sent">${ICON.holds}I sent it</button></div></div>` : "";
+  return `<div class="stuck"><div class="schips">${chips}</div>${say}${handoff}</div>`;
+}
+
+// The ten-second check after a fix (fixes.toml `check`): it holds, or it moved and it's back to "I'm stuck"
+function checkHTML(room, g) {
+  const c = g.f.how?.check || {};
+  return `<section class="block checking">${cardHead(room, g, "Check it", ICON.holds)}
+    <p class="cask">${esc(c.ask || "Try it gently: does it hold?")}</p>
+    <div class="opts check"><button type="button" data-check="holds">${ICON.holds}${esc(c.holds || "It holds")}</button>
+      <button type="button" data-check="moved">${ICON.tips}${esc(c.moved || "It moved")}</button></div></section>`;
+}
+
+const resetFix = (room) => Object.assign(room, { fixStep: 0, stuckOpen: false, stuckMore: false, stuckPick: null, handoffTo: null, stuckFromCheck: false });
+
+function startFix(room, g) {
+  resetFix(room);
+  room.checking = null;
+  room.fixing = g.key;
+  delete room.handed[g.key];
+  renderCard(room);
+  room.el.scrollIntoView({ block: "nearest", behavior: calm.matches ? "auto" : "smooth" });
+  if (matchMedia("(min-width: 901px)").matches) showFix(room, g); // beside the steps, the fix plays
+}
+
+function startCheck(room, g) {
+  resetFix(room);
+  room.fixing = null;
+  room.checking = g.key;
+  delete room.handed[g.key];
+  if (!g.f.how?.check) return finishCheck(room, g); // a chat saved before checks: as before, it's done
+  renderCard(room);
+}
+
+// It holds: keep how the room stood, mark the fix done and checked today, re-run the physics, and play
+// the room as it was, then as it is now
+async function finishCheck(room, g) {
+  room.was[g.key] = Object.fromEntries(room.pieces.map((q) => [q.index, Object.fromEntries(KEYS.map((k) => [k, q.card.risks[k].status]))]));
+  const today = new Date().toISOString();
+  const todo_ = g.members.filter((m) => m.f.answer && !m.f.done);
+  g.members.forEach(({ p }) => (p.card.checked = { ...p.card.checked, [g.key]: today }));
+  room.checking = null;
+  const k = bestScenario(g) || pnl.scenario;
+  renderCard(room);
+  await Promise.all(todo_.map(({ p, f }) => recheck(p, { ...p.card.answers, ...f.answer })));
+  if (matchMedia("(min-width: 901px)").matches && room.groups.some((x) => x.key === g.key && x.done)) {
+    pnl.then = null; // when "before" ends, play the room as it is now
+    openPanel(room, { scenario: k, variant: `was:${g.key}` });
+  }
+}
+
+function bindFix(room) {
+  const el = room.el;
+  const g = room.groups.find((x) => x.key === (room.fixing || room.checking));
+  if (!g) return;
+  const act = {
+    plan: () => { resetFix(room); room.fixing = room.checking = null; room.skipAsks = true; },
+    prev: () => (room.fixStep = Math.max(0, (room.fixStep || 0) - 1)),
+    next: () => (room.fixStep = (room.fixStep || 0) + 1),
+    check: () => startCheck(room, g),
+    stuck: () => { room.stuckOpen = !room.stuckOpen; room.stuckPick = room.handoffTo = null; },
+    "stuck-more": () => (room.stuckMore = true),
+    copy: () => navigator.clipboard?.writeText(el.querySelector(".hmsg")?.textContent || "").then(() => toast("Copied")),
+    sent: () => { room.handed[g.key] = room.handoffTo; resetFix(room); room.fixing = null; saveThread(); },
+  };
+  el.querySelectorAll("[data-act]").forEach((b) => (b.onclick = () => {
+    const a = b.dataset.act;
+    if (a === "handoff") room.handoffTo = b.dataset.to;
+    else if (a === "switch") return startFix(room, room.groups.find((x) => x.key === b.dataset.to));
+    else act[a]?.();
+    if (a !== "check" && a !== "copy") renderCard(room);
+  }));
+  el.querySelectorAll("[data-stuck]").forEach((b) => (b.onclick = () => {
+    room.stuckPick = room.stuckPick === b.dataset.stuck ? null : b.dataset.stuck;
+    room.handoffTo = null;
+    renderCard(room);
+  }));
+  el.querySelectorAll("[data-check]").forEach((b) => (b.onclick = () => {
+    if (b.dataset.check === "holds") return finishCheck(room, g);
+    startFix(room, g); // it moved: back to the fix's last step, with what to do about it open
+    room.fixStep = (g.f.how?.steps?.length || 1) - 1;
+    room.stuckOpen = room.stuckFromCheck = true;
+    renderCard(room);
+  }));
+}
+
+// The fixes handed to a landlord or a handyman, until they're done
+function handedHTML(room, groups, enter) {
+  const rows = groups.map((g) => {
+    const e = enter(`h:${g.key}`);
+    return `<div class="trow handed${e.cls}"${e.style} data-g="${room.groups.indexOf(g)}"><span class="ficon">${fixIcon(g.f)}</span>
+      <div class="tt"><div class="ft">${esc(g.title)}</div><div class="tm">${room.pieces.length > 1 ? `<span class="who">${badges(g.members.map((m) => m.p))}</span>` : ""}${chip(`With your ${room.handed[g.key]}`)}</div></div>
+      <div class="acts"><button class="fix-btn" type="button">Fix it</button><button class="done-btn" type="button">It's done</button></div></div>`;
+  }).join("");
+  return rows ? `<section class="block"><h4>${ICON.hand}Needs someone</h4><div class="todo">${rows}</div></section>` : "";
 }
 
 function renderCard(room) {
@@ -771,7 +924,8 @@ function renderCard(room) {
   const asks = askGroups(room);
   const groups = todo(room);
   const fold = (list, n, open) => (!open && list.length > n + 1 ? n : list.length);
-  const acts = groups.filter((g) => g.act), habits = groups.filter((g) => !g.act);
+  const handed = groups.filter((g) => g.act && !g.done && room.handed[g.key]);
+  const acts = groups.filter((g) => g.act && !handed.includes(g)), habits = groups.filter((g) => !g.act);
   const nAsks = fold(asks, ASKS_SHOWN, room.moreAsks), nRows = fold(acts, TODO_SHOWN, room.more);
   const moreBtn = (n, what) => (n ? `<button class="more" type="button" data-more="${what}">${n} more</button>` : "");
   const at = (g) => groups.indexOf(g); // rows and chips point into room.groups
@@ -789,10 +943,21 @@ function renderCard(room) {
     ? `<button class="asked" type="button" data-step="sure">${ICON.ask}<span>Help me be sure</span><i>${asks.length}</i></button>` : "";
 
   room.el.className = `card choices ${head.status}${pnl.room === room ? " open" : ""}${room.pending ? " busy" : ""}`;
+  const doing = (step === "fix" || step === "check") && groups.find((g) => g.key === (step === "fix" ? room.fixing : room.checking));
+  if (doing) {
+    room.el.className = `card choices ${head.status}${pnl.room === room ? " open" : ""}${room.pending ? " busy" : ""}`;
+    room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}${step === "fix" ? fixHTML(room, doing) : checkHTML(room, doing)}`;
+    enter.done();
+    bindCard(room);
+    bindFix(room);
+    markOpen();
+    return;
+  }
   room.el.innerHTML = `${glanceHTML(room, head)}${trackHTML(room, step, asks)}
     ${asking ? `<section class="block"><h4>${ICON.ask}Help me be sure</h4><div class="asks">${askHTML(room, asks.slice(0, nAsks), enter)}</div>${moreBtn(asks.length - nAsks, "asks")}</section>` : ""}
     ${acts.length ? `<section class="block"><h4>${ICON.wrench}${head.status === "holds" ? "Keep it that way" : "Do these first"}</h4>
       ${shopHTML(room)}<div class="todo">${rows}</div>${planEndHTML(room, acts)}</section>` : ""}
+    ${handedHTML(room, handed, enter)}
     ${habits.length ? `<section class="block"><h4>${ICON.hand}Good habits</h4>${chips}</section>` : ""}
     ${!asks.length && !groups.length ? `<div class="calm">${ICON.holds}Nothing to do here</div>` : ""}${folded}${notes}`;
   enter.done();
@@ -806,6 +971,8 @@ function bindCard(room) {
   const el = room.el;
   el.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => {
     room.skipAsks = b.dataset.step === "plan";
+    resetFix(room);
+    room.fixing = room.checking = null;
     renderCard(room);
     if (!room.skipAsks) goNext(room);
   }));
@@ -826,9 +993,11 @@ function bindCard(room) {
   });
   el.querySelectorAll(".trow[data-g]").forEach((row) => {
     const g = room.groups[+row.dataset.g];
+    row.querySelector(".fix-btn")?.addEventListener("click", () => startFix(room, g));
     row.querySelector(".done-btn")?.addEventListener("click", (e) => {
+      if (!g.done) return startCheck(room, g);
       e.currentTarget.classList.add("working");
-      toggleDone(g.members, !g.done);
+      toggleDone(g.members, false);
     });
     row.querySelector(".show-btn")?.addEventListener("click", () => showFix(room, g));
   });
@@ -925,6 +1094,11 @@ function findVariant(room, key) {
     const plans = Object.fromEntries(KEYS.map((k) => [k, plan(room, k)]));
     return { key, plan: true, plans, sim: true };
   }
+  if (key.startsWith("was:")) { // the room as it stood before a fix was checked
+    const g = fixGroups(room).find((x) => x.key === key.slice(4));
+    const before = room.was?.[key.slice(4)];
+    return g?.done && before ? { ...g, key, was: true, before, sim: true } : null;
+  }
   const g = fixGroups(room).find((x) => x.key === key);
   return g && !g.done ? g : null; // a fix that's done is simply how the room is now
 }
@@ -940,9 +1114,12 @@ function pillsFor(room, p, k, v) {
   const pills = groups.slice(0, p ? 4 : 3).map((g) => ({ key: g.key, label: `${fixIcon(g.f)}<span>${esc(g.title)}</span>${multi && !p ? badges(g.members.map((m) => m.p)) : ""}` }));
   const all = plan(room, k);
   if (!p && all.members.length > 1) pills.unshift({ key: "plan", label: `${ICON.holds}<span>All together</span>${badges(all.members.map((m) => m.p))}` });
-  if (v?.sim && !v.plan && (!p || own(v)) && !pills.some((o) => o.key === v.key)) {
+  if (v?.sim && !v.plan && !v.was && (!p || own(v)) && !pills.some((o) => o.key === v.key)) {
     pills.push({ key: v.key, label: `${fixIcon(v.f)}<span>${esc(v.title)}</span>` });
   }
+  // the last fix checked can be played as the room was before it
+  const last = Object.keys(room.was || {}).reverse().find((key) => findVariant(room, `was:${key}`));
+  if (last) pills.unshift({ key: `was:${last}`, label: `${ICON.replay}<span>Before: ${esc(findVariant(room, `was:${last}`).title)}</span>` });
   return pills;
 }
 
@@ -994,7 +1171,8 @@ function renderPanel(moved = false) {
 
   // below: how to do the previewed fix, or what happens (to each piece, or this piece's facts)
   pnl.body.classList.toggle("swap", moved);
-  pnl.body.innerHTML = v && !v.plan ? howHTML(room, v, p, k) : p ? factsHTML(p, k, v) : happensHTML(room, k, v);
+  const how = v && !v.plan && !v.was && room.fixing !== v.key; // while fixing, the steps are in the chat
+  pnl.body.innerHTML = how ? howHTML(room, v, p, k) : p ? factsHTML(p, k, v) : happensHTML(room, k, v);
   pnl.body.querySelectorAll("[data-n]").forEach((b) => (b.onclick = () => openPanel(room, { focus: room.pieces.find((q) => q.n === +b.dataset.n), scenario: k, variant: pnl.variant })));
   if (moved) pnl.body.scrollTop = 0;
 
@@ -1026,7 +1204,8 @@ function happensHTML(room, k, v) {
   const tiles = room.pieces.map((p) => {
     const s = statusWith(p, k, v);
     const used = v?.plan ? v.plans[k].members.find((m) => m.p === p)?.f : null;
-    const says = used ? `${fixIcon(used)}${esc(fixTitle(used))}` : esc(clip(p.card.risks[k].says, 140));
+    const says = used ? `${fixIcon(used)}${esc(fixTitle(used))}` : v?.was ? "Before the fix" // its words then weren't kept
+      : esc(clip(p.card.risks[k].says, 140));
     return `<button type="button" class="ptile ${s}" data-n="${p.n}">
       <span class="thumb" style="${thumbStyle(p, p.card.box, 46)}"><span class="num">${p.n}</span></span>
       <span class="pt"><span class="pname">${esc(pieceName(p.card))}</span><b>${ICON[s]}${WORD[s]}</b><small>${says}</small></span></button>`;
@@ -1135,6 +1314,12 @@ function sceneRequest() {
   const members = v?.plan ? v.plans[k].members : v?.members || [];
   const answers = room.pieces.map((q) => {
     const m = members.find((x) => x.p === q && x.f.answer);
+    if (v?.was) { // before the fix: its answers taken back out
+      if (!m) return q.card.answers;
+      const a = { ...q.card.answers };
+      Object.keys(m.f.answer).forEach((key) => delete a[key]);
+      return a;
+    }
     return m && !m.f.done ? { ...q.card.answers, ...m.f.answer } : q.card.answers;
   });
   const focus = room.pieces.length > 1 && p && k !== "quake" ? p.index : null; // a quake shakes everything
@@ -1201,7 +1386,14 @@ async function fetchScene() {
     viewerModule ??= await import("./viewer.js");
     if (!pnl.viewer) {
       pnl.viewer = new viewerModule.SimViewer(host);
-      pnl.viewer.onEnd = () => (host.querySelector(".replay").hidden = false);
+      pnl.viewer.onEnd = () => {
+        host.querySelector(".replay").hidden = false;
+        if (pnl.then !== undefined && pnl.room) { // "before" has played: now the room as it is
+          pnl.variant = pnl.then;
+          pnl.then = undefined;
+          renderPanel();
+        }
+      };
       pnl.viewer.onTag = (i) => pnl.room && openPanel(pnl.room, { focus: pnl.room.pieces[i], scenario: pnl.scenario, variant: pnl.variant });
       // how fast a piece went over, when the viewer reports it: faster than anyone watching can step in
       pnl.viewer.onTip = (i, seconds) => {
@@ -1269,7 +1461,9 @@ async function recheck(p, answers) {
       body: JSON.stringify({ run: p.run, piece: p.index, answers }),
     });
     if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    const checked = p.card.checked;
     p.card = await res.json();
+    if (checked) p.card.checked = checked;
     p.record.cards[p.index] = p.card;
     renderCard(room);
     if (pnl.room === room) renderPanel();
