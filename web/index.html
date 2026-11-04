@@ -44,24 +44,28 @@
       <p class="lede"><b>Will anything here tip over?</b> Show me any room. I find what could fall on a child, an
         older adult, or in an earthquake, simulate it, and show you the fix.</p>
       <!-- how to use it: each step is a real recording of the app (web/tutorial/, made by tools/tutorial.py) -->
-      <ol class="flow" aria-label="How to use it">
-        <li tabindex="0" style="--i:0">
-          <div class="fv"><video src="tutorial/room.mp4" style="object-position: 0 100%" poster="tutorial/room.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
-          <div class="fc"><b><i>1</i>Show the whole room</b><small>Stand back so every piece is in frame, top to bottom, with what's on it. A photo or a short video.</small></div>
-        </li>
-        <li tabindex="0" style="--i:1">
-          <div class="fv"><video src="tutorial/find.mp4" poster="tutorial/find.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
-          <div class="fc"><b><i>2</i>See what can tip</b><small>Each piece gets an outline and a verdict. Answer “Help me be sure” to sharpen it.</small></div>
-        </li>
-        <li tabindex="0" style="--i:2">
-          <div class="fv"><video src="tutorial/watch.mp4" poster="tutorial/watch.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
-          <div class="fc"><b><i>3</i>Watch it fall</b><small>A child climbs, an adult leans, the ground shakes. Tap a scenario or a piece.</small></div>
-        </li>
-        <li tabindex="0" style="--i:3">
-          <div class="fv"><video src="tutorial/fix.mp4" style="object-position: 0 0" poster="tutorial/fix.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
-          <div class="fc"><b><i>4</i>Fix it, check again</b><small>Tap “I did this” on a fix and the physics runs again. Ask follow-ups by text or voice.</small></div>
-        </li>
-      </ol>
+      <div class="guide">
+        <button class="step-arrow step-prev" type="button" aria-label="Previous step"><svg viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></svg></button>
+        <ol class="flow" aria-label="How to use it">
+          <li tabindex="0" style="--i:0">
+            <div class="fv"><span class="fn" aria-hidden="true">1</span><video src="tutorial/room.mp4" poster="tutorial/room.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
+            <div class="fc"><b><i>1</i>Show the whole room</b><small>Stand back so every piece is in frame, top to bottom, with what's on it. A photo or a short video.</small></div>
+          </li>
+          <li tabindex="0" style="--i:1">
+            <div class="fv"><span class="fn" aria-hidden="true">2</span><video src="tutorial/find.mp4" poster="tutorial/find.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
+            <div class="fc"><b><i>2</i>See what can tip</b><small>Each piece gets an outline and a verdict. Answer “Help me be sure” to sharpen it.</small></div>
+          </li>
+          <li tabindex="0" style="--i:2">
+            <div class="fv"><span class="fn" aria-hidden="true">3</span><video src="tutorial/watch.mp4" poster="tutorial/watch.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
+            <div class="fc"><b><i>3</i>Watch it fall</b><small>A child climbs, an adult leans, the ground shakes. Tap a scenario or a piece.</small></div>
+          </li>
+          <li tabindex="0" style="--i:3">
+            <div class="fv"><span class="fn" aria-hidden="true">4</span><video src="tutorial/fix.mp4" poster="tutorial/fix.jpg" muted loop playsinline preload="none" aria-hidden="true"></video></div>
+            <div class="fc"><b><i>4</i>Fix it, check again</b><small>Tap “I did this” on a fix and the physics runs again. Ask follow-ups by text or voice.</small></div>
+          </li>
+        </ol>
+        <button class="step-arrow step-next" type="button" aria-label="Next step"><svg viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></svg></button>
+      </div>
       <p class="why">Tip-overs send about 18,000 people in the US to the ER every year. Four in five of those killed are children.</p>
     </section>
     <div id="messages"></div>

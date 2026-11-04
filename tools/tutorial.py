@@ -11,8 +11,8 @@
 What gets pressed is session(); what each clip keeps is CLIPS. A clip frames named page elements (REGIONS)
 wherever they are on screen at that moment, and fits long waits into a set number of seconds, so the same
 spec still cuts right after the layout or the models' speed change. The take (frames, marks, element boxes)
-stays in out/tutorial-take/. A closed card shows only part of its still: the middle, unless web/index.html sets
-the video's object-position. Uses Google Chrome; without it: `uv run --with playwright playwright install chromium`.
+stays in out/tutorial-take/. Only the open card shows a clip, whole (16:10); its still shows until it plays.
+Uses Google Chrome; without it: `uv run --with playwright playwright install chromium`.
 """
 
 import argparse
