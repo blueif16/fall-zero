@@ -55,10 +55,16 @@ def health() -> dict[str, bool]:
     return {name: p.configured for name, p in providers().items()}
 
 
-@app.get("/api/handoffs")
-def handoffs() -> dict:
-    """The messages for when someone else has to say yes or do the work (skill/catalog/handoffs.toml)."""
-    return catalog("handoffs")
+PAGE_CATALOGS = ("handoffs", "household")  # what the page itself reads of skill/catalog/
+
+
+@app.get("/api/catalog/{name}")
+def page_catalog(name: str) -> dict:
+    """handoffs: the messages for when someone else has to say yes or do the work; household: the "Who's
+    home" chips and what each answer changes."""
+    if name not in PAGE_CATALOGS:
+        raise HTTPException(404, "no such catalog")
+    return catalog(name)
 
 
 class ChatIn(BaseModel):

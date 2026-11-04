@@ -47,7 +47,12 @@ For each piece:
   Always include the one for its family, plus `weights` when things stand on it.
 
 Also name the room (`room`) and say who the photo suggests lives or plays there (`people`), such as
-"toddler: crib and toys" or "older adult: walking frame by the bed".
+"toddler: crib and toys" or "older adult: walking frame by the bed". Then guess it in two fields the
+page shows as chips the person confirms: `child` is `crawling` (a baby not walking yet: a crib, a
+play mat, baby gear), `climbing` (a toddler, 1-3: a toddler bed, push toys, a high chair),
+`older_kids` (school-age toys, a bunk bed) or `none`; `older` is `lives_here` (a walking frame, grab
+bars, a lift chair) or `no`. Use `unknown` whenever the photo doesn't show it; never guess from the
+style of the room alone.
 
 ## Describe
 

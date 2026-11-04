@@ -448,7 +448,7 @@ def analyze(
     with status("Looking for anything that could tip · Muse Spark"):
         found = knowledge.survey(image)
     lap("survey", t0)
-    report |= {"room": found.room, "people": found.people}
+    report |= {"room": found.room, "people": found.people, "household": {"child": found.child, "older": found.older}}
     pieces = found.pieces
 
     # Each piece is described for the engine (or judged) by name, so Muse Spark reads every piece

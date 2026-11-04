@@ -58,3 +58,16 @@ def test_labels_are_short_words_or_the_fallback():
     assert label("vase vase vase vase", "") == "" and label(None) == ""
     assert label("low wooden media console under TV", "", NAME) == "low wooden media console under TV"
     assert label("IKEA BESTÅ TV bench") == "IKEA BESTÅ TV bench"
+
+
+def test_the_survey_guesses_the_household_only_from_the_catalog():
+    """Who's home starts from the photo's guess, held to skill/catalog/household.toml's options."""
+    from fall_zero.furniture import catalog
+
+    found = knowledge.Survey(room="nursery", people="toddler: crib and toys", pieces=[], child="climbing")
+    assert found.child == "climbing" and found.older == "unknown"  # what the photo can't show stays unknown
+    assert {o["key"] for o in catalog("household")["child"]["options"]} | {"unknown"} == set(
+        knowledge.Survey.model_fields["child"].annotation.__args__
+    )
+    with pytest.raises(ValidationError):
+        knowledge.Survey(room="nursery", people="", pieces=[], child="teenager")

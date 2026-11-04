@@ -774,7 +774,7 @@ function goNext(room) {
 // --- fixing it and checking it, in the card --------------------------------------------------------
 
 let HANDOFFS = {}; // skill/catalog/handoffs.toml: who else can say yes or do it
-fetch("/api/handoffs").then((r) => r.json()).then((h) => (HANDOFFS = h)).catch(() => {});
+fetch("/api/catalog/handoffs").then((r) => r.json()).then((h) => (HANDOFFS = h)).catch(() => {});
 const STUCK_SHOWN = 6;
 
 const cardHead = (room, g, small, icon) => `<div class="fhead"><span class="ficon">${icon}</span>
