@@ -115,7 +115,8 @@ modal_apps/
   glimmer.py      Muse Glimmer 30B on vLLM, H100
 samples/          generated test rooms (Muse Image)
 tests/            physics, card and earthquake tests
-docs/PRD.md, docs/RESEARCH.md (who gets hurt, what people fear, what works, with sources)
+docs/PRD.md, docs/RESEARCH.md (who gets hurt, what people fear, what works, with sources),
+docs/JOURNEY.md (how people go about it and where they stop), docs/FLOW.md (the one-flow proposal)
 ```
 
 ## Web app
