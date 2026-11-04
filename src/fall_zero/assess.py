@@ -8,8 +8,12 @@ The child and adult answers come from statics over the plausible sizes (well und
 earthquake answer comes from simulated earthquakes (`sim.shake`), several per variant, in parallel
 and cached; without `simulate` it falls back to the rocking threshold.
 
-Each thing on top is judged on its own: is it hard, how hard would it hit (weight x fall height),
-and does it fall in the simulated earthquake. Only things that would hurt someone go in the fix.
+Each thing on it (on top or on an open shelf) is judged on its own: is it hard, how hard would it hit
+(weight x fall height), and does it fall in the simulated earthquake. Only things that would hurt someone
+go in the fix.
+
+What to do in practice (what to buy, the cost, the steps, the renter's option) comes from the skill's
+fixes catalog (skill/catalog/fixes.toml): every fix carries its `kind` there and its `how`.
 """
 
 import multiprocessing
@@ -19,8 +23,9 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
 
 from fall_zero.analyze import child_verdicts, elderly_verdict, plausible, verdict
-from fall_zero.furniture import Case, TopItem
-from fall_zero.physics import G, elderly_test, f2057_tests, rocking_threshold_g, statics
+from fall_zero.furniture import Case, TopItem, catalog, contents
+from fall_zero.knowledge import SHORT, label, tidy
+from fall_zero.physics import G, Scenario, elderly_test, f2057_tests, rocking_threshold_g, statics
 from fall_zero.sim import shake, simulate
 
 # Peak floor acceleration at the USGS ShakeMap intensity boundaries: from 0.34 g shaking is
@@ -43,6 +48,12 @@ STATUS = {"pass": "holds", "uncertain": "maybe", "fail": "tips"}
 RISK_KEYS = ("child", "adult", "quake")
 CARD_STATUSES = ("analyzed", "judged")  # report entries that become cards
 ITEM_WORD = {"tv": "TV", "screen": "TV"}  # when the model gave no short name
+# What's in the drawers, as the share of each drawer it fills
+DRAWER_FILL = {"full": 1.0, "half": 0.5, "empty": 0.0}
+# Assumption: what a toddler reaches standing. A thing a child wants that stands higher is climbed for.
+CHILD_REACH_M = 0.75
+ICONS = ("strap", "lock", "top", "distance", "tv", "toy", "weight", "hand", "latch", "search")  # the page draws these
+HOW = ("label", "buy", "cost", "time", "tools", "steps", "avoid", "renter", "source")
 
 # What each child test means when it fails, worst first, by what the child loads
 CHILD_SAYS = {
@@ -67,6 +78,10 @@ def configure(d: Case, depth_is_guess: bool, answers: dict) -> tuple[Case, float
         size = depth = 0.03
     if answers.get("material") in MATERIAL_ANSWERS:
         d = replace(d, material=MATERIAL_ANSWERS[answers["material"]])
+    if (share := DRAWER_FILL.get(answers.get("drawers"))) is not None:  # counted in every test from now on
+        zones = tuple(replace(z, fill=share, contents="" if z.contents == "none" else z.contents)
+                      if z.kind == "drawers" else z for z in d.zones)  # fmt: skip
+        d = replace(d, zones=zones, contents_known=True)
     moved = set(answers.get("moved", [])) | (set(range(len(d.top_items))) if answers.get("cleared_top") else set())
     if moved:
         d = replace(d, top_items=tuple(it for i, it in enumerate(d.top_items) if i not in moved))
@@ -77,7 +92,9 @@ def configure(d: Case, depth_is_guess: bool, answers: dict) -> tuple[Case, float
 
 _pool: ProcessPoolExecutor | None = None
 _quake_cache: dict[str, dict] = {}
-WORKERS = min(12, os.cpu_count() or 4)
+# A Vercel function has one CPU and no shared memory for a process pool: there they run one after another
+# (a room's ~50 earthquakes take ~15 s)
+WORKERS = 1 if os.environ.get("VERCEL") else min(12, os.cpu_count() or 4)
 
 
 def pool() -> ProcessPoolExecutor:
@@ -87,13 +104,18 @@ def pool() -> ProcessPoolExecutor:
     return _pool
 
 
+def _map(fn, jobs: list) -> list:
+    return list(pool().map(fn, jobs)) if WORKERS > 1 else [fn(j) for j in jobs]
+
+
 def _ready(_) -> int:
     return os.getpid()
 
 
 def warm() -> None:
     """Start every worker (each imports MuJoCo, ~1.5 s) before the first photo needs them."""
-    list(pool().map(_ready, range(WORKERS)))
+    if WORKERS > 1:
+        list(pool().map(_ready, range(WORKERS)))
 
 
 def _shake_one(job: tuple[Case, bool, bool, float | None, int]) -> dict:
@@ -107,14 +129,13 @@ def quakes(variants: list[tuple[Case, bool, bool]], hz: float | None) -> list[di
     """Shake each (template, anchored, locks) variant with the same simulated earthquakes, all in
     parallel. Per variant: {"runs", "fell" (how many it fell over in), "seeds" (each run's outcome)}."""
     keys = [repr((*v, hz)) for v in variants]
-    todo = [(*v, hz, seed) for v, k in zip(variants, keys, strict=True) if k not in _quake_cache
-            for seed in QUAKE_SEEDS]  # fmt: skip
+    new = {k: v for v, k in zip(variants, keys, strict=True) if k not in _quake_cache}  # the same variant once
+    todo = [(*v, hz, seed) for v in new.values() for seed in QUAKE_SEEDS]
     if todo:
-        runs = list(pool().map(_shake_one, todo))
-        for v, k in zip(variants, keys, strict=True):
-            if k not in _quake_cache:
-                mine = [r for job, r in zip(todo, runs, strict=True) if job[:3] == v]
-                _quake_cache[k] = {"runs": len(mine), "fell": sum(bool(r["fell_at"]) for r in mine), "seeds": mine}
+        runs = _map(_shake_one, todo)
+        for k, v in new.items():
+            mine = [r for job, r in zip(todo, runs, strict=True) if job[:3] == v]
+            _quake_cache[k] = {"runs": len(mine), "fell": sum(bool(r["fell_at"]) for r in mine), "seeds": mine}
     return [_quake_cache[k] for k in keys]
 
 
@@ -181,12 +202,13 @@ def overall(rs: dict[str, dict]) -> str:
 
 
 def item_name(it: TopItem) -> str:
-    return it.short or ITEM_WORD.get(it.kind, "item")
+    return label(it.short) or ITEM_WORD.get(it.kind) or label(it.name, "", SHORT) or "item"
 
 
 def item_hazard(d: Case, it: TopItem, falls: str | None) -> dict:
-    """Would it hurt someone? Hard or soft, and how hard it would hit: weight x height it falls from."""
-    drop = d.height + it.z + it.height / 2
+    """Would it hurt someone? Hard or soft, and how hard it would hit: weight x height it falls from (its
+    middle, standing on the top or on its shelf)."""
+    drop = d.base_of(it) + it.z + it.height / 2
     energy = it.mass * G * drop
     if it.is_screen or (it.hard and energy >= SERIOUS_J):
         level = "danger"
@@ -202,7 +224,63 @@ def item_hazard(d: Case, it: TopItem, falls: str | None) -> dict:
         why += f"; falls off in {falls.lower()}"
     if level == "fine":
         why = "Soft: it can't hurt anyone" if not it.hard else f"Light ({it.mass:.1f} kg): won't do real harm"
-    return {"level": level, "why": why, "energy_J": round(energy, 1), "falls": falls}
+    return {"level": level, "why": why, "energy_J": round(energy, 1), "drop_m": round(drop, 2), "falls": falls}
+
+
+def hazards(d: Case) -> list[int]:
+    """The things on it that would hurt someone if they fell: moving those is the fix."""
+    return [i for i, it in enumerate(d.top_items) if item_hazard(d, it, None)["level"] != "fine"]
+
+
+def tempting(d: Case) -> list[int]:
+    """The things a child would climb for: something they want, standing out of their reach."""
+    return [i for i, it in enumerate(d.top_items) if it.tempting and d.base_of(it) >= CHILD_REACH_M]
+
+
+def holds(d: Case) -> list[dict]:
+    """What it holds, by kind of contents and thing standing on it: [{"what": "books", "kg": 38.2}, ...]."""
+    out: dict[str, float] = {}
+    for key, kg in d.held().items():
+        what = contents()[key].short or key if key in contents() else key
+        out[what] = out.get(what, 0.0) + kg
+    for it in d.top_items:
+        out[item_name(it)] = out.get(item_name(it), 0.0) + it.mass
+    return [{"what": what, "kg": round(kg, 1)} for what, kg in out.items() if kg >= 0.05]
+
+
+# --- what to do, from the fixes catalog -------------------------------------------------------
+
+
+def how(kind: str) -> dict:
+    """The practical advice for a kind of fix, straight from the catalog."""
+    entry = catalog("fixes")[kind]
+    return {k: entry.get(k, [] if k in ("tools", "steps") else "") for k in HOW}
+
+
+def fix(key: str, kind: str, **card) -> dict:
+    """A fix of a kind from the catalog: its icon, title and why unless the card gives its own."""
+    entry = catalog("fixes")[kind]
+    return {"key": key, "kind": kind, "icon": entry["icon"], "title": entry["label"], "why": entry.get("why", ""),
+            "how": how(kind), "after": None} | card  # fmt: skip
+
+
+# Habits that only need saying, by who they are for (`when` in the catalog), and whether a card needs one:
+# `facts` are the card's statuses, whether it holds contents, has doors, and a brand and model
+HABITS = {
+    "contents": lambda f: f["contents"] and (f["child"] != "holds" or f["quake"] != "holds"),
+    "adult": lambda f: f["adult"] != "holds",
+    "quake": lambda f: f["doors"] and f["quake"] != "holds",
+    "brand": lambda f: bool(f["brand"]),
+}
+
+
+def anchor_kind(est: dict) -> str:
+    """How this piece is held down (a strap, a range's bracket): the describe step names it. Reports from
+    before it did only have the fix's title."""
+    kinds = [k for k, v in catalog("fixes").items() if v.get("anchors")]
+    if est.get("anchor") in kinds:
+        return est["anchor"]
+    return next((k for k in kinds if k in (est.get("anchor_fix") or "").lower()), kinds[0])
 
 
 # --- the card ---------------------------------------------------------------------------------
@@ -211,6 +289,7 @@ def item_hazard(d: Case, it: TopItem, falls: str | None) -> dict:
 def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = False) -> dict:
     """One analyzed piece of the report (`analyze()`'s `pieces[i]`) as a card."""
     a = answers or {}
+    entry = tidy(entry)  # a report saved before the model's text was checked
     est = entry["estimate"]
     base = Case.from_dict(entry["template"])
     d, size, depth = configure(base, est["depth_is_guess"], a)
@@ -219,9 +298,12 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
     upper = a.get("floor") != "ground"
     hz = UPPER_FLOOR_HZ if upper else None
 
-    # Which things on top would hurt someone if they fell: moving those is the fix
-    first_pass = {i: item_hazard(base, it, None) for i, it in enumerate(base.top_items)}
-    to_move = [i for i, h in first_pass.items() if h["level"] != "fine"]
+    # Which things on it would hurt someone if they fell (moving those is a fix), and which a child would
+    # climb for (moving those is another)
+    to_move, wanted = hazards(base), tempting(base)
+
+    def without(ids) -> Case:
+        return configure(base, est["depth_is_guess"], a | {"moved": sorted(moved | set(ids))})[0]
 
     # Every variant the card shows, shaken by the same simulated earthquakes in one parallel batch
     variants = {"now": (d, anchored, locks)}
@@ -230,8 +312,9 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
         if not locks and len(d.drawers()) > 1:
             variants["locks"] = (d, False, True)
     if to_move and not set(to_move) <= moved:
-        variants["moved"] = (configure(base, est["depth_is_guess"], a | {"moved": sorted(moved | set(to_move))})[0],
-                             anchored, locks)  # fmt: skip
+        variants["moved"] = (without(to_move), anchored, locks)
+    if wanted and not set(wanted) <= moved:
+        variants["tempting"] = (without(wanted), anchored, locks)
     q = dict(zip(variants, quakes(list(variants.values()), hz), strict=True)) if simulate_quakes else {}
     floor_known = "floor" in a
 
@@ -244,7 +327,7 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
         dd, sz, dp = configure(base, est["depth_is_guess"], a | changes)
         is_anchored = changes.get("anchored", a.get("anchored")) == "yes"
         already = (key == "anchor" and anchored) or (key == "locks" and locks) or \
-            (key == "moved" and set(to_move) <= moved)  # fmt: skip
+            (key == "moved" and set(to_move) <= moved) or (key == "tempting" and set(wanted) <= moved)  # fmt: skip
         rs = risks(dd, sz, dp, is_anchored, bool(changes.get("locks", locks)), quake_for("now" if already else key))
         return {k: r["status"] for k, r in rs.items()}
 
@@ -260,32 +343,33 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
     for i, (it, seen) in enumerate(zip(base.top_items, entry.get("items", []), strict=False)):
         falls = stage_of.get(it.name) if fell_items[it.name] * 2 >= len(QUAKE_SEEDS) else None
         items.append({"name": it.name, "short": item_name(it), "kind": it.kind, "box": seen.get("box"),
-                      "moved": i in moved, **item_hazard(base, it, falls)})  # fmt: skip
+                      "outline": seen.get("outline"), "moved": i in moved, "where": "top" if it.shelf is None
+                      else "shelf", "kg": round(it.mass, 1), "tempting": it.tempting,
+                      **item_hazard(base, it, falls)})  # fmt: skip
 
     fixes = []
     if status != "holds" or anchored:
-        fixes.append({
-            "key": "anchor", "icon": "strap", "title": est.get("anchor_fix") or "Strap it to the wall",
-            "why": est.get("anchor_how") or ("Check behind the top for a strap; if there's none, add one. About $15, "
-            "10 minutes." if a.get("anchored") == "unsure" else "An anti-tip strap screwed into the wall. About $15, "
-            "10 minutes."),
-            "after": after("anchor", anchored="yes"), "answer": {"anchored": "yes"}, "done": anchored,
-        })  # fmt: skip
+        unsure = a.get("anchored") == "unsure"
+        fixes.append(fix(
+            "anchor", anchor_kind(est), title=est.get("anchor_fix") or "Strap it to the wall",
+            why="Check behind the top for a strap; if there's none, add one." if unsure else
+            est.get("anchor_how") or catalog("fixes")[anchor_kind(est)].get("why", ""),
+            after=after("anchor", anchored="yes"), answer={"anchored": "yes"}, done=anchored,
+        ))  # fmt: skip
     if not anchored and len(d.drawers()) > 1:
         with_locks = after("locks", locks=True)
         if with_locks != current or locks:
-            fixes.append({"key": "locks", "icon": "lock", "title": "Let only one drawer open at a time",
-                          "why": "Drawer interlocks stop several drawers coming open at once, whether a child "
-                          "pulls them or the floor shakes.", "after": with_locks, "answer": {"locks": True},
-                          "done": locks})  # fmt: skip
+            fixes.append(fix("locks", "locks", title="Let only one drawer open at a time", after=with_locks,
+                             answer={"locks": True}, done=locks))  # fmt: skip
     if to_move:
         # worst first: the TV and the heaviest hits lead the title
         to_move.sort(key=lambda i: (items[i]["level"] != "danger", -items[i]["energy_J"]))
         hits = [items[i] for i in to_move]
         listed = " and ".join(h["short"] for h in hits[:2]) + (f" and {len(hits) - 2} more" if len(hits) > 2 else "")
         falling = [h["short"] for h in hits if h["falls"]]
-        why = hits[0]["why"].split(";")[0] + ". " if len(hits) == 1 else \
-            f"{sum(base.top_items[i].mass for i in to_move):.1f} kg of hard things, {d.height:.1f} m up. "  # fmt: skip
+        kg, high = sum(base.top_items[i].mass for i in to_move), max(h["drop_m"] for h in hits)
+        one = hits[0]["why"].split(";")[0] + ". "
+        why = one if len(hits) == 1 else f"{kg:.1f} kg of hard things, {high:.1f} m up. "
         if falling:
             why += f"In the simulated earthquakes the {' and '.join(falling)} fell off."
         elif any(base.top_items[i].breakable for i in to_move):
@@ -294,15 +378,25 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
             why += "If the furniture tips, it comes down first, onto whoever is in front."
         target = sorted(moved | set(to_move))
         with_moved = after("moved", moved=target)
-        fixes.append({"key": "moved", "icon": "top", "title": f"Move the {listed} somewhere low", "why": why,
-                      "after": with_moved if with_moved != current else None, "answer": {"moved": target},
-                      "done": set(to_move) <= moved})  # fmt: skip
+        fixes.append(fix("moved", "moved", title=f"Move the {listed} somewhere low", why=why,
+                         after=with_moved if with_moved != current else None, answer={"moved": target},
+                         done=set(to_move) <= moved))  # fmt: skip
+    if wanted and (current["child"] != "holds" or set(wanted) <= moved):
+        target = sorted(moved | set(wanted))
+        with_moved = after("tempting", moved=target)
+        names = " and ".join(dict.fromkeys(item_name(base.top_items[i]) for i in wanted))
+        fixes.append(fix("tempting", "tempting", why=f"The {names}: " + catalog("fixes")["tempting"]["why"].lower(),
+                         after=with_moved if with_moved != current else None, answer={"moved": target},
+                         done=set(wanted) <= moved))  # fmt: skip
     if status != "holds":
         near = est.get("nearby", est.get("nearby_bed_or_crib"))
-        fixes.append({"key": "distance", "icon": "distance",
-                      "title": f"Keep the {near} {fall_m:.1f} m away" if near else
-                      f"Keep beds and play mats {fall_m:.1f} m away",
-                      "why": f"If it falls, its top lands about {d.height:.1f} m out.", "after": None})  # fmt: skip
+        fixes.append(fix("distance", "distance", title=f"Keep the {near} {fall_m:.1f} m away" if near else
+                         f"Keep beds and play mats {fall_m:.1f} m away",
+                         why=f"If it falls, its top lands about {d.height:.1f} m out."))  # fmt: skip
+    facts = current | {"contents": bool(d.held()), "doors": bool(d.door_list()), "brand": est.get("brand_model")}
+    for kind, entry_ in catalog("fixes").items():
+        if entry_.get("when") in HABITS and HABITS[entry_["when"]](facts):
+            fixes.append(fix(kind, kind))
     # the fixes that clear the most risks first; information-only ones last
     fixes.sort(key=lambda f: ("answer" not in f, -sum(s == "holds" for s in (f["after"] or {}).values())))
 
@@ -316,6 +410,11 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
                           "hint": "Upper floors sway with the building and shake furniture far harder.",
                           "options": [{"label": "Ground floor", "value": "ground"},
                                       {"label": "Upper floor", "value": "upper"}]})  # fmt: skip
+    if "drawers" not in a and not anchored and d.drawers() and drawers_matter(base, est["depth_is_guess"], a):
+        questions.append({"key": "drawers", "title": "What's in the drawers?",
+                          "hint": "Full drawers make it heavier.",
+                          "options": [{"label": "Full", "value": "full"}, {"label": "About half", "value": "half"},
+                                      {"label": "Nearly empty", "value": "empty"}]})  # fmt: skip
     if current["child"] == "maybe" and not anchored:
         measured = "measured" in a
         if est["depth_is_guess"] and "depth" not in a and not measured:
@@ -344,9 +443,11 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
     if status == "maybe" and not questions:
         note = "Too close to call from here. Treat it as a tip risk and strap it."
 
+    held = holds(d)
     return {
         "name": entry["piece"]["name"],
         "box": entry.get("box"),
+        "outline": entry.get("outline"),
         "items": items,
         "status": status,
         "headline": {"tips": "Can tip over", "maybe": "Might tip over", "holds": "Stable"}[status]
@@ -363,6 +464,9 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
             "depth_guessed": est["depth_is_guess"] and "depth" not in a and "measured" not in a,
             "mass_kg": round(d.mass()),
             "mass_with_clothes_kg": round(d.mass(fill=True)),
+            # with everything it holds: its contents and the things standing on it (`holds`)
+            "mass_full_kg": round(d.mass() + sum(h["kg"] for h in held)),
+            "holds": held,
             "top_load_kg": round(d.top_load_kg, 1),
             "preset": est.get("example", est.get("preset")),
             "material": d.material,
@@ -373,6 +477,16 @@ def assess(entry: dict, answers: dict | None = None, simulate_quakes: bool = Fal
             "floor": "upper" if upper else "ground",
         },  # fmt: skip
     }
+
+
+def drawers_matter(base: Case, depth_is_guess: bool, a: dict) -> bool:
+    """Would full drawers or empty ones change what a climbing child or a grabbing adult does to it?"""
+    seen = set()
+    for fill in ("full", "empty"):
+        d, size, depth = configure(base, depth_is_guess, a | {"drawers": fill})
+        rs = risks(d, size, depth, locks=bool(a.get("locks")))
+        seen.add((rs["child"]["status"], rs["adult"]["status"]))
+    return len(seen) > 1
 
 
 def _shown_seed(q: dict | None) -> int:
@@ -398,36 +512,53 @@ def assess_all(report: dict, simulate_quakes: bool = False) -> list[dict]:
 
 RANK = {"holds": 0, "maybe": 1, "tips": 2}
 SAYS_NOW = {"holds": "Holds once that's done", "maybe": "Could still fall", "tips": "Can still fall"}
+# the headline, and what a risk says when the judge's own words were garbled
+FALLS = {"tips": "Can fall over", "maybe": "Might fall over", "holds": "Stable"}
+# A judged fix whose icon clearly is a catalog kind gets that kind's practical advice: tying it to the wall,
+# clearing where it lands. Others ("Hang it instead") stay the judge's own words.
+JUDGED_KINDS = {"strap": "strap", "distance": "distance"}
 
 
 def judged_card(entry: dict, answers: dict | None = None) -> dict:
     """A piece judged from the references (a mirror, a lamp, a safe). Each fix and each answer to its
     question carries the statuses expected afterwards, so tapping still updates the verdict."""
     a = answers or {}
+    entry = tidy(entry)
     j = entry["judgment"]
     first = {k: j[k]["status"] for k in RISK_KEYS}
     q = j.get("question")
     chosen = next((o for o in q["options"] if o["label"] == a.get("judged")), None) if q else None
-    now = dict(chosen["after"]) if chosen else dict(first)
-    for i, f in enumerate(j["fixes"]):
-        if a.get(f"fix_{i}"):
-            now = {k: min(now[k], f["after"][k], key=RANK.__getitem__) for k in now}
-    rs = {k: {"status": now[k], "says": j[k]["says"] if now[k] == first[k] else SAYS_NOW[now[k]], "judged": True}
-          for k in RISK_KEYS}  # fmt: skip
+
+    def settled(start: dict) -> dict:  # what the fixes done so far leave
+        out = dict(start)
+        for i, f in enumerate(j["fixes"]):
+            if a.get(f"fix_{i}"):
+                out = {k: min(out[k], f["after"][k], key=RANK.__getitem__) for k in out}
+        return out
+
+    now = settled(chosen["after"] if chosen else first)
+    rs = {k: {"status": now[k], "says": j[k]["says"] or FALLS[now[k]] if now[k] == first[k] else SAYS_NOW[now[k]],
+              "judged": True} for k in RISK_KEYS}  # fmt: skip
     status = overall(rs)
-    fixes = [{"key": f"fix_{i}", "icon": f["icon"] if f["icon"] != "move" else "top", "title": f["title"],
-              "why": f["why"], "after": f["after"], "answer": {f"fix_{i}": True}, "done": bool(a.get(f"fix_{i}"))}
-             for i, f in enumerate(j["fixes"])]  # fmt: skip
+    fixes = []
+    for i, f in enumerate(j["fixes"]):
+        icon = f["icon"] if f["icon"] in ICONS else "top" if f["icon"] == "move" else "strap"
+        kind = {"kind": JUDGED_KINDS[icon], "how": how(JUDGED_KINDS[icon])} if icon in JUDGED_KINDS else {}
+        fixes.append({"key": f"fix_{i}", "icon": icon, "title": f["title"], "why": f["why"], "after": f["after"],
+                      "answer": {f"fix_{i}": True}, "done": bool(a.get(f"fix_{i}"))} | kind)  # fmt: skip
     questions = []
-    if q and "judged" not in a:
+    # asked only while an answer could still change something: once a fix settles it ("Is it fixed to the
+    # wall?" after strapping it), every answer leads to the same statuses
+    if q and "judged" not in a and any(settled(o["after"]) != now for o in q["options"]):
         questions.append({"key": "judged", "title": q["title"],
                           "options": [{"label": o["label"], "value": o["label"]} for o in q["options"]]})  # fmt: skip
     return {
         "name": entry["piece"]["name"],
         "box": entry.get("box"),
+        "outline": entry.get("outline"),
         "items": [],
         "status": status,
-        "headline": {"tips": "Can fall over", "maybe": "Might fall over", "holds": "Stable"}[status],
+        "headline": FALLS[status],
         "risks": rs,
         "fixes": fixes,
         "questions": questions,
@@ -444,6 +575,7 @@ def judged_card(entry: dict, answers: dict | None = None) -> dict:
 def trajectory(entry: dict, answers: dict, scenario: str, variant: str, seed: int) -> dict:
     """The simulation the card's viewer plays: `scenario` is quake, child or adult; `variant` is as_is,
     anchor (strapped), locks (one drawer at a time) or moved (the hard things off the top)."""
+    entry = tidy(entry)
     est = entry["estimate"]
     base = Case.from_dict(entry["template"])
     a = dict(answers)
@@ -452,18 +584,19 @@ def trajectory(entry: dict, answers: dict, scenario: str, variant: str, seed: in
     if variant == "locks":
         a["locks"] = True
     if variant == "moved":
-        hazards = [i for i, it in enumerate(base.top_items) if item_hazard(base, it, None)["level"] != "fine"]
-        a["moved"] = sorted(set(a.get("moved", [])) | set(hazards))
+        a["moved"] = sorted(set(a.get("moved", [])) | set(hazards(base)))
     d, size, depth = configure(base, est["depth_is_guess"], a)
     anchored, locks = a.get("anchored") == "yes", bool(a.get("locks"))
     if scenario == "quake":
         hz = None if a.get("floor") == "ground" else UPPER_FLOOR_HZ
         return shake(d, anchored=anchored, seed=seed, building_hz=hz, trace=True, locks=locks).trace or {}
-    if scenario == "adult":
-        s = elderly_test(d, anchored=anchored)
-    else:
-        test = risks(d, size, depth, anchored=anchored, locks=locks)["child"]["test"]
-        top = d.top_drawer()
-        only_open = frozenset({top.index}) if locks and top else None
-        s = next(t for t in f2057_tests(d, anchored=anchored, only_open=only_open) if t.key == test)
+    s = elderly_test(d, anchored=anchored) if scenario == "adult" else child_test(d, size, depth, anchored, locks)
     return simulate(d, s, trace=True).trace or {}
+
+
+def child_test(d: Case, size: float, depth: float, anchored: bool, locks: bool) -> Scenario:
+    """The child test the card's verdict rests on: the worst one that fails, or might."""
+    test = risks(d, size, depth, anchored=anchored, locks=locks)["child"]["test"]
+    top = d.top_drawer()
+    only_open = frozenset({top.index}) if locks and top else None
+    return next(t for t in f2057_tests(d, anchored=anchored, only_open=only_open) if t.key == test)

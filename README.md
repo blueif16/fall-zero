@@ -54,6 +54,35 @@ uv run fall-zero smoke meta-image meta-sam sam3d               # image -> mask -
 | `uv run fall-zero smoke [checks...]` | Health check. Checks: `meta-spark meta-wonder meta-image meta-vision meta-search-json meta-sam meta-voice-file meta-voice-realtime baseten fireworks modal glimmer sam3d mujoco` |
 | `uv run ruff check . && uv run ruff format .` | Lint and format |
 
+## Deploying
+
+Live at https://fall-zero.vercel.app (Vercel project `fall-zero`, Hobby plan). From the repo root:
+
+```bash
+npx vercel deploy --prod     # uploads the working tree, minus .vercelignore (.env, out/, tests, docs)
+```
+
+- **Entry:** the root `app.py` loads `src/fall_zero/server.py`. `vercel.json` gives the function 300 s,
+  the Hobby maximum; a photo takes about 80 s.
+- **Keys:** the app needs one there, `MODEL_API_KEY` (Meta: Muse Spark, SAM 3.1, voice). It is stored as a
+  Secret for Production and Preview. To change it, for example after rotating, pipe it from `.env` so it
+  never shows on screen, then redeploy (a new key reaches new deployments only):
+  ```bash
+  uv run python -c "from dotenv import dotenv_values; print(dotenv_values('.env')['MODEL_API_KEY'], end='')" \
+    | npx vercel env add MODEL_API_KEY -e production,preview --sensitive --force --yes
+  ```
+  The other `.env` keys (Baseten, Fireworks, Modal, Hugging Face) serve the CLI and the smoke tests. The web
+  app doesn't use them, so they aren't uploaded.
+- **Storage:** uploads, reports and saved chats go to the private Blob store `fall-zero-files`; Vercel set
+  `BLOB_READ_WRITE_TOKEN` when it was connected. Locally they stay in `out/`. Deployed, each browser lists
+  only its own chats.
+- **What differs on Vercel** (where `VERCEL` is set):
+  - One CPU, so the earthquakes run one after another (about 15 s a room).
+  - No OpenGL (`MUJOCO_GL=disable`).
+  - No ffmpeg and a 4.5 MB request limit, so the page sends a photo at 1600 px, a video as its sharpest
+    frame, and voice as WAV.
+  - The `/api/chat`, `/api/image` and `/api/segment` playgrounds are off.
+
 ## Layout
 
 ```
@@ -62,28 +91,30 @@ src/fall_zero/
   clients.py      OpenAI-compatible client per provider (meta, baseten, fireworks, modal, glimmer)
   meta.py         Muse Spark/Wonder text + vision, structured output, Muse Image, SAM 3.1
   voice.py        Muse Voice Transcribe: file upload and realtime WebSocket
-  analyze.py      photo/video -> pieces -> SAM boxes -> preset + estimate -> verdicts, fixes, videos
+  analyze.py      photo/video -> pieces -> SAM outlines -> preset + estimate -> verdicts, fixes, videos
   assess.py       report -> cards: tips/maybe/holds per risk, re-checked fixes, questions when unsure
   agent.py        chat agent: one or two sentences above the cards, follow-up questions
   knowledge.py    loads the skill: the prompt for each step, and answer schemas held to the catalogs
   skill/          the tip-over skill Muse Spark reads (no furniture knowledge lives in the code):
     SKILL.md        how to survey a room, describe a piece as zones, and judge what can't be built
     references/     rooms, case furniture, appliances and screens, other hazards, weights, standards
-    catalog/        examples.toml (worked examples), materials.toml, contents.toml
+    catalog/        examples.toml (worked examples), materials.toml, contents.toml, fixes.toml (practical advice)
   furniture.py    one parametric template for every case piece: a box whose front is a stack of zones
-                  (drawers, side- or bottom-hinged doors, open shelves), contents, items on top, mass
+                  (drawers, side- or bottom-hinged doors, open shelves), contents, things on it, mass
   physics.py      tip-over statics, F2057 child tests, elderly grab, rocking threshold
-  sim.py          MuJoCo model + video of a template under a scenario; the staged earthquake
+  sim.py          MuJoCo model + video of one piece or a whole room under a scenario; the staged earthquake
+  room.py         the whole room as one scene: pieces placed as the photo shows them, simulated together
   reconstruct.py  fallback for pieces with no preset: SAM mask -> SAM 3D Objects (not hosted)
   server.py       serves web/ and the API; /api/turn streams one chat turn as NDJSON
   smoke.py        end-to-end check of every service
-web/              chat page (plain HTML/CSS/JS, no build step)
+web/              chat page (plain HTML/CSS/JS, no build step); viewer.js plays the simulation, people.js draws
+                  the child and adult who climb or grab
 modal_apps/
   sam3d.py        SAM 3D Objects on an L40S
   glimmer.py      Muse Glimmer 30B on vLLM, H100
 samples/          generated test rooms (Muse Image)
 tests/            physics, card and earthquake tests
-docs/PRD.md
+docs/PRD.md, docs/RESEARCH.md (who gets hurt, what people fear, what works, with sources)
 ```
 
 ## Web app
@@ -97,28 +128,43 @@ leaning mirror), a garage or an office. Most pieces are boxes with drawers, door
 builds and tests. Anything else (a leaning mirror, a floor lamp, a safe) is judged by Muse Spark from the
 skill's references and its tiles are tagged "judged" instead of "simulated".
 
-Nobody reads paragraphs, so the answer is cards. Each piece gets a verdict (can tip / might tip / stable),
-a tile per risk (climbing child, adult leaning, earthquake), question cards when the answer depends on
-something a photo can't show (is it strapped? which floor? how deep? what material? measured size?), and fix
-cards that show what each risk becomes once the fix is done. Tapping an answer or "I did this" re-runs the
-physics in place (`/api/assess`). Muse Spark adds one or two sentences above the cards.
+Nobody reads paragraphs, so the answer is cards, split in two and never repeated. The chat on the left holds
+the choices: questions when the answer depends on something a photo can't show (is it strapped? which floor?
+what's in the drawers? how deep? measured size?), and "Do these first", the fixes that help the whole room most
+("Strap it to the wall" on pieces 1 and 2 is one row), each with its cost and time, "Show me" and "I did this",
+plus good habits (nothing tempting on top, heavy things low, everyday things within reach). Tapping an answer or
+"I did this" re-runs the physics (`/api/assess`). Muse Spark adds one or two sentences above, about the room.
+The advice is practical and sourced (`skill/catalog/fixes.toml`, `docs/RESEARCH.md`): what to buy, what to
+avoid (plastic straps, peel-and-stick, bare drywall), three steps, and what renters can do.
 
-Things on top are judged one by one: Muse Spark says what each is and whether it's hard or breakable, the
+SAM 3.1 outlines every piece and every thing on it, on top or on its open shelves, and the photo shows those
+real shapes (around a high chair standing in front of a hutch, say), numbered. The outlines also size and place
+those things (on the right shelf) against their piece, and place the pieces side by side in the room's 3D scene.
+What the shelves hold (books, dishes, toys) counts in the weight and is simulated loose, so it spills.
+
+Things on it are judged one by one: Muse Spark says what each is and whether it's hard or breakable, the
 physics gives how hard it would hit (weight x fall height), and the simulated earthquakes show whether it
 falls. Only things that would hurt someone go into the "move it" fix; a plush toy is marked harmless.
 
-"See it happen" plays the simulation inside the card in 3D (three.js): the child test, the adult grab, or the
-staged earthquake, as it is, strapped, or with the hard things moved. The server sends only the motion
-(`/api/simulate`, about a second), the browser draws it, and you can turn the view.
+The panel on the right (opened by the glance row, a numbered outline or a fix's "Show me") plays the whole room
+in 3D (three.js): every piece placed as the photo shows it, against one wall, with everything on it, under the
+chosen scenario. A child walks up and climbs the open drawer or shelf, or tugs it; an older adult grabs it for
+balance; or one staged earthquake shakes them all, so books spill and one piece knocking into another shows up
+too. The floor shows where a piece would land, and a tipped piece says how fast it fell. Pieces the engine
+can't build stand in place as ghosts. Below the viewer: what happens to each piece, what would fall, and the
+previewed fix's how-to; "All together" plays the room with every needed fix done. A piece opens on its own
+view: the camera flies to it, the rest fade, and its facts (size, weight empty and full, what it holds) sit below. The server sends only the motion (`/api/scene`,
+precomputed for a new photo while the reply is written), the browser draws it, and you can turn the view.
 
 Chats are saved as they happen (`out/threads/`); the clock button in the top-left control reopens them.
 Numbers, timings and the raw report are under "Details".
 
 API: `POST /api/turn` (multipart `text`, `previous_response_id`, `context`, optional `media`) streams NDJSON
 events `step`, `report` (with `run` and `cards`), `delta`, `done` (with the `response_id` for the next turn),
-or `error`. `POST /api/assess` (`run`, `piece`, `answers`) returns one updated card; `POST /api/simulate`
-(plus `scenario`, `variant`, `seed`) returns a simulation's motion for the viewer; `/api/threads` lists, saves
-and deletes chats. Each upload and its
+or `error`. `POST /api/assess` (`run`, `piece`, `answers`) returns one updated card; `POST /api/scene`
+(`run`, each piece's `answers`, `scenario`, optional `focus`) returns the whole room's simulation for the
+panel's viewer; `POST /api/simulate` (`run`, `piece`, `scenario`, `variant`, `seed`) returns one piece's;
+`/api/threads` lists, saves and deletes chats. Each upload and its
 `report.json` land in `out/web/<id>/`. The other routes are listed at `/docs`.
 
 ## Earthquake

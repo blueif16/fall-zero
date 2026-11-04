@@ -1,0 +1,210 @@
+# What to do about a risk, in practice: what to buy, what it costs, how long it takes and the steps, for the
+# page's fix cards. Keys are the fix kinds the engine and the describe step name; the code reads them, it
+# never writes this advice itself. `renter`: what to do without drilling, and how far to trust it.
+# `when`: who it is for, for the code that picks fixes. `source`: where the advice comes from.
+# `why`: the card's one line on why it helps. `icon`: what the page draws (strap, lock, top, distance, tv,
+# toy, weight, hand, latch, search). `anchors = true`: a way to hold the piece itself down, which the
+# describe step picks for each piece.
+#
+# Research behind it (2026-10): CPSC 2023 tip-over report (Feb 2024): 17,800 ED-treated injuries a year,
+# 71% of deaths children (55% aged 1-3, most of the known cases climbing), 26% adults 60+, 44% of deaths
+# in bedrooms, half crushed under the piece, two thirds head injuries, 47% involve a TV. Consumer Reports
+# anchor-kit tests (2024): metal or nylon straps into a wood stud held 230-350 lb per anchor, a plastic
+# strap pulled out at 23 lb, peel-and-stick kits did worst; anchor every piece in two places. Consumer
+# Reports surveys (2018, 2021): two thirds don't anchor; "it seems stable enough" (41-45%) and "no holes in
+# the wall" (25-29%) are the reasons. Tokyo Fire Department: furniture causes 30-50% of earthquake
+# injuries; L-brackets into the wall, or tension poles with stopper mats where you can't drill.
+
+[strap]
+label = "Anti-tip straps into a wall stud"
+anchors = true
+icon = "strap"
+why = "A strap into a stud holds it when a child climbs it or the floor shakes."
+buy = "2 metal or nylon anti-tip straps"
+cost = "$10–25"
+time = "15 min"
+tools = ["Drill", "Stud finder"]
+steps = [
+  "Find a stud behind the top of the piece",
+  "Screw one bracket into the stud and one into the back of the top",
+  "Join them and pull the strap snug; do the same on the other side",
+]
+avoid = "Plastic straps and peel-and-stick kits held the least in Consumer Reports' tests. A screw into bare drywall pulls out."
+renter = "Two small screw holes are easy to fill when you move out; ask your landlord. Can't drill at all? A tension pole between the top and the ceiling with stopper mats under the front is the Tokyo Fire Department's no-drill option."
+when = "furniture"
+source = "Consumer Reports anchor-kit tests 2024; CPSC Anchor It; Tokyo Fire Department"
+
+[bracket]
+label = "The range's anti-tip bracket"
+anchors = true
+icon = "strap"
+why = "The bracket holds the back down when someone stands on the open oven door."
+buy = "The anti-tip bracket for this range (most come with one; makers send replacements)"
+cost = "$0–20"
+time = "20 min"
+tools = ["Drill"]
+steps = [
+  "Slide the range out",
+  "Screw the bracket to the floor or wall where the back foot stands",
+  "Slide the range back until its foot locks under the bracket",
+  "Check: the back should not lift when you pull the top gently",
+]
+avoid = "A bracket left off after the range was moved or cleaned behind does nothing."
+renter = "The landlord owns the range: ask them to fit the bracket. It is a safety requirement of the range itself."
+when = "appliance"
+source = "UL 858 / ANSI Z21.1 range stability requirements; CPSC range tip-over warnings"
+
+[tv_strap]
+label = "Strap the TV"
+anchors = true
+icon = "tv"
+why = "A strapped TV can't topple forward onto a child."
+buy = "A TV anti-tip strap kit (2 straps), or a wall mount"
+cost = "$10–20"
+time = "15 min"
+tools = ["Screwdriver", "Drill"]
+steps = [
+  "Screw the straps into the threaded holes on the back of the TV",
+  "Fix the other ends into a wall stud, or into the back of a heavy, anchored stand",
+  "Push the TV back on a low, sturdy stand",
+]
+avoid = "A TV on a dresser or tall chest is the most common deadly combination: the child climbs the drawers to reach it."
+renter = "Strap the TV to the back of its stand, and anchor the stand. A low, wide stand with the TV pushed back is the next best thing."
+when = "tv"
+source = "CPSC Anchor It; CPSC 2023 tip-over report (47% of deaths involve a TV)"
+
+[locks]
+label = "Drawer latches"
+icon = "lock"
+why = "Only one drawer opens at a time, whether a child pulls them or the floor shakes."
+buy = "Child-safety drawer latches, one per drawer"
+cost = "$10–20 a set"
+time = "20 min"
+tools = ["Screwdriver"]
+steps = [
+  "Fit a latch inside the top of each drawer",
+  "Check a drawer opens only when you press the latch",
+]
+avoid = "Latches slow a child down; they don't stop a determined climber. Strap it too."
+renter = "Adhesive latches leave nothing behind and work the same."
+when = "drawers"
+source = "CPSC Anchor It; ASTM F2057-23 interlock tests"
+
+[moved]
+label = "Move heavy things lower"
+icon = "top"
+why = "Weight up high tips it sooner, and falls first."
+buy = ""
+cost = "Free"
+time = "5 min"
+tools = []
+steps = [
+  "Put the TV and heavy or breakable things on low, wide furniture",
+  "Keep the top for light, soft things",
+]
+avoid = "Weight on top makes the piece tip sooner and falls first, onto whoever is in front."
+renter = ""
+when = "items"
+source = "CPSC Anchor It"
+
+[tempting]
+label = "Nothing tempting up high"
+icon = "toy"
+why = "Children climb to get what they can see."
+buy = ""
+cost = "Free"
+time = "2 min"
+tools = []
+steps = [
+  "Move toys, the remote and snacks to a low shelf a child can reach",
+  "Keep the top bare, so there's nothing to climb for",
+]
+avoid = "Children climb to get what they can see."
+renter = ""
+when = "child"
+source = "CPSC Anchor It: avoid storing toys, remote controls or other items up high"
+
+[heavy_low]
+label = "Heaviest in the bottom"
+icon = "weight"
+why = "Weight down low keeps it standing; weight up high pulls it over."
+buy = ""
+cost = "Free"
+time = "10 min"
+tools = []
+steps = [
+  "Put the heaviest things in the bottom drawers or on the lowest shelves",
+  "Keep the top drawers and shelves light",
+]
+avoid = ""
+renter = ""
+when = "contents"
+source = "CPSC Anchor It; Tokyo Fire Department"
+
+[within_reach]
+label = "Everyday things within reach"
+icon = "hand"
+why = "Reaching up or leaning on it for balance is how adults pull it over."
+buy = ""
+cost = "Free"
+time = "10 min"
+tools = []
+steps = [
+  "Keep things used every day between waist and shoulder height",
+  "Nothing used often on top of the TV or the furniture",
+]
+avoid = "Reaching up or leaning on an open drawer is how older adults pull furniture over."
+renter = ""
+when = "adult"
+source = "CPSC Anchor It tip card for older adults"
+
+[distance]
+label = "Clear where it would land"
+icon = "distance"
+why = "If it falls, nobody is under it."
+buy = ""
+cost = "Free"
+time = "10 min"
+tools = []
+steps = [
+  "Move the crib, bed or play mat out of the shaded area where it would land",
+  "Keep doorways and hallways clear of tall furniture",
+]
+avoid = "44% of tip-over deaths happen in bedrooms."
+renter = ""
+when = "any"
+source = "CPSC 2023 tip-over report; Tokyo Fire Department"
+
+[latches]
+label = "Cabinet latches for shaking"
+icon = "latch"
+why = "Shaking swings doors open and what's behind them falls out."
+buy = "Earthquake latches for the doors"
+cost = "$10–30"
+time = "20 min"
+tools = ["Screwdriver"]
+steps = [
+  "Fit a latch inside each door that opens on its own when the cabinet is shaken",
+  "Keep heavy dishes and glass on the lowest shelves",
+]
+avoid = "In shaking, doors swing open and what's behind them falls out."
+renter = "Adhesive latches leave nothing behind."
+when = "quake"
+source = "Tokyo Fire Department; Earthquake Country Alliance, Secure Your Space"
+
+[recall]
+label = "Check it isn't recalled"
+icon = "search"
+why = "Recalled pieces often come with a free anchoring kit or a refund."
+buy = ""
+cost = "Free"
+time = "2 min"
+tools = []
+steps = [
+  "Search the brand and model at cpsc.gov/Recalls",
+  "If it's recalled, ask the maker for the refund or the free anchoring kit",
+]
+avoid = ""
+renter = ""
+when = "brand"
+source = "CPSC Anchor It tip card for older adults: inspect for recalled products"

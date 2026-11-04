@@ -1,62 +1,73 @@
 # What is kept inside a zone. kg_m3: per cubic metre of the space it takes (a zone's `fill` is the
 # share it takes); kg_per_m: per metre of hanging rail. `source` says where the number comes from;
-# "assumption" means nobody has measured it yet. color: how the viewer draws it (r g b a).
+# "assumption" means nobody has measured it yet. color: how the viewer draws it (r g b a). short: a word
+# or two for the page ("books fell").
 
 [clothes]
+short = "clothes"
 label = "folded clothes"
 kg_m3 = 136.2
 source = "ASTM F2057-23 clothing-load fill, 8.5 lb/ft3"
 color = ".55 .70 .90 1"
 
 [hanging_clothes]
+short = "clothes"
 label = "clothes on hangers"
 kg_per_m = 30
 source = "assumption: a full rail"
 color = ".60 .72 .88 1"
 
 [books]
+short = "books"
 label = "books"
 kg_m3 = 600
 source = "assumption: about 24 kg per 80 cm shelf of hardbacks, gaps included"
 color = ".66 .42 .36 1"
 
 [files]
+short = "files"
 label = "paper files and binders"
 kg_m3 = 450
 source = "assumption: about 20 kg in a full letter-size file drawer"
 color = ".93 .90 .80 1"
 
 [dishes]
+short = "dishes"
 label = "plates, bowls and glasses"
 kg_m3 = 350
 source = "assumption"
 color = ".90 .92 .95 1"
 
 [pantry]
+short = "food"
 label = "food: cans, jars, bags"
 kg_m3 = 400
 source = "assumption"
 color = ".80 .65 .45 1"
 
 [tools]
+short = "tools"
 label = "hand and power tools"
 kg_m3 = 600
 source = "assumption"
 color = ".55 .55 .58 1"
 
 [linens]
+short = "linens"
 label = "towels, sheets, blankets"
 kg_m3 = 150
 source = "assumption"
 color = ".85 .88 .95 1"
 
 [toys]
+short = "toys"
 label = "toys"
 kg_m3 = 60
 source = "assumption: mostly plastic and air"
 color = ".95 .75 .40 1"
 
 [media]
+short = "AV gear"
 label = "AV gear, game consoles, discs"
 kg_m3 = 250
 source = "assumption"

@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.32",
     "rich>=15.0.0",
     "uvicorn[standard]>=0.54.0",
+    "vercel-blob>=0.5.0",
     "websockets>=17.3",
 ]
 

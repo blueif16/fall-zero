@@ -1,0 +1,11 @@
+# Never uploaded to Vercel (its CLI doesn't read .gitignore): keys, local output, and what only development needs.
+# Keys go in the project's environment variables instead (see README, "Deploying").
+.env
+.env.*
+out
+tests
+docs
+modal_apps
+.pytest_cache
+.ruff_cache
+.claude

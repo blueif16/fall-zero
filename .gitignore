@@ -14,3 +14,34 @@ wheels/
 .env.*
 !.env.example
 out/
+.vercel
+.env*
+
+# credentials and keys (never commit)
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.kdbx
+credentials*
+secrets*
+*secret*.json
+*service-account*.json
+*.token
+.netrc
+.npmrc
+.pypirc
+.aws/
+.gcloud/
+.modal.toml
+
+# local tool state and OS junk
+.claude/settings.local.json
+.vercel/
+.DS_Store
+Thumbs.desktop.ini
+*.log
+
+# keep the template
+!.env.example

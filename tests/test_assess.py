@@ -2,15 +2,15 @@
 
 from dataclasses import asdict
 
-from fall_zero.assess import assess, item_hazard, judged_card, trajectory
-from fall_zero.furniture import Case, TopItem, examples
+from fall_zero.assess import HOW, ICONS, assess, configure, item_hazard, judged_card, trajectory
+from fall_zero.furniture import Case, TopItem, catalog, examples
+from fall_zero.knowledge import tidy
 
 
 def entry(key: str, **estimate) -> dict:
     """A report entry for a preset, as analyze() would produce it."""
     label, d = examples()[key]
-    est = {"example": key, "depth_is_guess": True, "items_on_top": [], "nearby": None,
-           "size_basis": "test"} | estimate  # fmt: skip
+    est = {"example": key, "depth_is_guess": True, "on_it": [], "nearby": None, "size_basis": "test"} | estimate
     return {"piece": {"name": label}, "template": {k: v for k, v in asdict(d).items() if k != "notes"}, "estimate": est}
 
 
@@ -71,6 +71,7 @@ def test_the_viewer_gets_every_body_every_frame():
     assert trace["geoms"] and len(trace["frames"]) > 100
     assert all(len(f) == 7 * trace["nbody"] for f in trace["frames"])
     assert trace["load_geoms"] == ["weight"] and trace["events"]  # the 60 lb weight tips it over
+    assert trace["phases"] == {"settle": 1.0, "ramp": 2.0} and trace["events"][0][0] > 1.0  # after it settled
 
 
 def test_every_worked_example_gets_a_card():
@@ -114,3 +115,101 @@ def test_a_judged_piece_updates_with_its_fix_and_answer():
     assert judged_card(judged_entry(), {"fix_0": True})["status"] == "holds"
     answered = judged_card(judged_entry(), {"judged": "Yes"})
     assert answered["status"] == "holds" and not answered["questions"]
+
+
+def test_a_judged_question_goes_once_a_fix_settles_it():
+    """Clipped to the wall, "Is it clipped to the wall?" can't change anything any more."""
+    assert not judged_card(judged_entry(), {"fix_0": True})["questions"]
+
+
+def test_the_drawers_question_counts_what_they_hold_in_every_test():
+    """Full drawers pulled open put weight out front; empty ones leave the piece lighter. Asked only where it
+    changes what a climbing child or a grabbing adult does, and answered it fills the drawers that much."""
+    e = entry("dresser_hardwood_9")
+    asked = next(q for q in assess(e)["questions"] if q["key"] == "drawers")
+    assert [o["value"] for o in asked["options"]] == ["full", "half", "empty"]
+    full, empty = assess(e, {"drawers": "full"}), assess(e, {"drawers": "empty"})
+    assert full["risks"]["child"]["status"] != empty["risks"]["child"]["status"]
+    assert not any(q["key"] == "drawers" for q in full["questions"])
+    assert full["details"]["mass_kg"] == empty["details"]["mass_kg"] == empty["details"]["mass_full_kg"]
+    assert (
+        full["details"]["holds"][0]["what"] == "clothes"
+        and full["details"]["mass_full_kg"] > full["details"]["mass_kg"]
+    )
+    d, _, _ = configure(Case.from_dict(e["template"]), True, {"drawers": "half"})
+    assert d.contents_known and d.mass() == Case.from_dict(e["template"]).mass()  # the empty weight stays empty
+    assert sum(p.mass for p in d.parts() if p.kind == "fill") > 0  # but the clothes count with the drawers shut
+    assert not any(q["key"] == "drawers" for q in assess(entry("ikea_billy_80"))["questions"])  # nothing to ask
+
+
+def test_every_fix_carries_its_practical_advice_from_the_catalog():
+    """What to buy, the cost and the steps come from skill/catalog/fixes.toml; the anchor is the one the describe
+    step named (a range's bracket), or for older reports read from its title."""
+    fixes = catalog("fixes")
+    toy = TopItem("toy car", mass=0.3, width=0.15, height=0.1, x=0.2, short="toy car", tempting=True)
+    cards = []
+    for key, est in [("chest_tall_6", {"brand_model": "IKEA HEMNES"}), ("range_30in", {"anchor": "bracket"}),
+                     ("range_30in", {"anchor_fix": "Fit the anti-tip bracket"}), ("hutch_kitchen", {})]:  # fmt: skip
+        e = entry(key, **est)
+        e["template"]["top_items"] = [asdict(toy)]
+        cards.append(assess(e))
+    for c in cards:
+        for f in c["fixes"]:
+            assert f["icon"] in ICONS and f["kind"] in fixes, f
+            assert f["how"] == {k: fixes[f["kind"]].get(k, [] if k in ("tools", "steps") else "") for k in HOW}
+        info = [i for i, f in enumerate(c["fixes"]) if "answer" not in f]
+        assert info == list(range(len(c["fixes"]) - len(info), len(c["fixes"])))  # information-only ones last
+    kinds = [{f["kind"] for f in c["fixes"]} for c in cards]
+    assert {"strap", "recall", "tempting", "heavy_low"} <= kinds[0] and "bracket" in kinds[1] and "bracket" in kinds[2]
+    assert "latches" in kinds[3]
+    judged = judged_card(judged_entry())["fixes"][0]
+    assert judged["kind"] == "strap" and judged["how"]["steps"]
+
+
+def test_a_toy_up_high_is_a_fix_for_the_child_and_its_preview_matches_doing_it():
+    e = entry("chest_tall_6")
+    toy = TopItem("toy car", mass=0.3, width=0.15, height=0.1, x=0.2, short="toy car", tempting=True)
+    e["template"]["top_items"] = [asdict(toy)]
+    e["items"] = [{"name": toy.name, "kind": "block", "box": None}]
+    card = assess(e)
+    assert card["items"][0] | {"where": "top", "tempting": True} == card["items"][0] and card["items"][0]["kg"] == 0.3
+    fix = next(f for f in card["fixes"] if f["key"] == "tempting")
+    assert fix["icon"] == "toy" and fix["answer"] == {"moved": [0]}
+    done = assess(e, fix["answer"])
+    assert next(f for f in done["fixes"] if f["key"] == "tempting")["done"]
+    assert (fix["after"] or card["risks"] and {k: r["status"] for k, r in card["risks"].items()}) == {
+        k: r["status"] for k, r in done["risks"].items()
+    }
+
+
+# The describe step once returned this, 2,524 characters long, as a vase's short name
+GARBLED = (
+    "vaseria_leafy_short_name vaseeucalyptuseucalyptuseucalyptusvasemasevasewitheucalyptus_vasethease_d1b7f0e3-"
+    "ca7a-42f1-a90f-308de8491f40as vase?eucalyptus vase wi vase_with_eucalyptuslain_propsvase "
+) * 12
+
+
+def test_garbled_or_rambling_text_from_the_model_never_reaches_the_page():
+    """A garbled short name gives way to the survey's name for the thing, clipped to a few words; a rambling anchor
+    title to the catalog's; a judged fix's garbled title to the catalog's for its icon, and a garbled answer drops."""
+    e = entry("chest_tall_6", anchor="strap", anchor_fix="Strap it " * 30, nearby="crib_crib_crib")
+    vase = TopItem("small vase with eucalyptus on the top", mass=1.5, width=0.12, height=0.3, short=GARBLED,
+                   breakable=True)  # fmt: skip
+    e["template"]["top_items"] = [asdict(vase)]
+    e["items"] = [{"name": vase.name, "kind": "block", "box": None}]
+    card = assess(e)
+    assert card["items"][0]["short"] == "small vase with eucalyptus"
+    texts = [card["name"], *(f["title"] for f in card["fixes"]), *(h["what"] for h in card["details"]["holds"])]
+    assert all(t and len(t) <= 80 and "_" not in t for t in texts), texts
+    assert card["fixes"][0]["title"] == catalog("fixes")["strap"]["label"]
+    assert next(f for f in card["fixes"] if f["key"] == "distance")["title"].startswith("Keep beds")
+    assert tidy(e)["template"]["top_items"][0]["short"] == "small vase with eucalyptus"  # the scene's events too
+
+    j = judged_entry()
+    j["judgment"]["fixes"][0]["title"] = GARBLED
+    j["judgment"]["question"]["options"].append({"label": GARBLED, "after": j["judgment"]["fixes"][0]["after"]})
+    j["judgment"]["child"]["says"] = ""
+    judged = judged_card(j)
+    assert judged["fixes"][0]["title"] == catalog("fixes")["strap"]["label"]
+    assert [o["label"] for o in judged["questions"][0]["options"]] == ["Yes", "No"]
+    assert judged["risks"]["child"]["says"] == "Can fall over"

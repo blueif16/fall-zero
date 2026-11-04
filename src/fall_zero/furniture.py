@@ -16,6 +16,7 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from functools import cache
 from pathlib import Path
+from typing import NamedTuple
 
 # ASTM F2057-23 constants, converted from imperial
 LB, LBF, IN, FT3 = 0.45359237, 4.4482216, 0.0254, 0.0283168
@@ -66,6 +67,7 @@ class Contents:
     kg_per_m: float = 0.0
     color: str = ".55 .70 .90 1"
     source: str = ""
+    short: str = ""  # a word or two for the page: "books"
 
 
 @cache
@@ -73,8 +75,7 @@ def contents() -> dict[str, Contents]:
     return {key: Contents(**cfg) for key, cfg in catalog("contents").items()}
 
 
-@dataclass(frozen=True)
-class Part:
+class Part(NamedTuple):  # a tuple, not a dataclass: statics builds a quarter of a million per card
     name: str
     body: str  # "carcass", "drawer_<i>", "door_<i>" or "item_<i>"
     center: tuple[float, float, float]
@@ -82,6 +83,7 @@ class Part:
     mass: float
     kind: str = "panel"  # panel | front | fill | load | leg
     color: str = ""  # for contents, from the catalog
+    what: str = ""  # contents: its key in the contents catalog ("books")
 
 
 @dataclass(frozen=True)
@@ -133,7 +135,8 @@ class Door:
 
 @dataclass(frozen=True)
 class TopItem:
-    """Something standing on the top (a TV, boxes, a lamp), sized from its SAM outline."""
+    """Something standing on the piece (a TV, boxes, a lamp on top; a plant or a basket on an open shelf),
+    sized from its SAM outline."""
 
     name: str
     kind: str = "block"  # screen (or tv): a flat panel on a small foot | anything else: a solid block
@@ -147,6 +150,8 @@ class TopItem:
     short: str = ""  # one or two words for the page: "plant pot", "bunny"
     hard: bool = True  # a soft thing (a plush, a cushion) can fall without hurting anyone
     breakable: bool = False  # glass or ceramic: breaks into sharp pieces
+    shelf: int | None = None  # on an open shelf: its index among `Case.shelf_levels(("open",))`; None: on top
+    tempting: bool = False  # a child would climb for it: a toy, the remote, sweets
 
     @property
     def is_screen(self) -> bool:
@@ -194,6 +199,9 @@ class Case:
     top_items: tuple[TopItem, ...] = ()  # things standing on top, e.g. a TV
     density_scale: float = 1.0  # scales every panel; set to match a known weight, varied in sweeps
     leg_inset: float = 0.03
+    # The user said what's in the drawers (the zones' contents and fill): count it in every test, not
+    # only in the ones the standard fills
+    contents_known: bool = False
     notes: tuple[str, ...] = field(default=(), compare=False)
 
     def __post_init__(self):  # accept zones and items as dicts, as they come back from report.json
@@ -228,7 +236,12 @@ class Case:
     @property
     def top_height(self) -> float:
         """Height of the tallest thing, the piece itself included."""
-        return self.height + max((i.z + i.height for i in self.top_items), default=0.0)
+        return self.height + max((i.z + i.height for i in self.top_items if i.shelf is None), default=0.0)
+
+    def base_of(self, item: TopItem) -> float:
+        """Height of the surface an item stands on: the top, or its shelf."""
+        levels = self.shelf_levels(("open",))
+        return levels[min(item.shelf, len(levels) - 1)] if item.shelf is not None and levels else self.height
 
     @property
     def mat(self) -> Material:
@@ -302,17 +315,19 @@ class Case:
         return out
 
     def parts(self, open_drawers: frozenset[int] = frozenset(), fill: bool = False,
-              open_doors: frozenset[int] = frozenset()) -> list[Part]:  # fmt: skip
+              open_doors: frozenset[int] = frozenset(), shown: bool = True) -> list[Part]:  # fmt: skip
         """Every panel as a solid box. Drawers in `open_drawers` are pulled out by `travel`; doors in
-        `open_doors` stand open at 90 degrees. `fill` adds what each zone holds."""
+        `open_doors` stand open at 90 degrees. `fill` adds what the drawers and doors hide; `shown`, what
+        stands on the open shelves (books), which is there in every test. Things on open shelves are loose
+        bodies of their own (`stuff_*`, `item_*`): they slide and fall off."""
         m, k = self.mat, self.density_scale
         W, D, H, t, tb, bh = self.width, self.depth, self.height, m.panel, m.back, self.base_height
         rho, rho_back = m.density * k, m.back_density * k
         c_bottom = bh if self.base == "legs" else 0.0  # where the side panels start
         stuff = contents()
 
-        def box(name, body, center, size, density, kind="panel", color=""):
-            return Part(name, body, center, size, size[0] * size[1] * size[2] * density, kind, color)
+        def box(name, body, center, size, density, kind="panel", color="", what=""):
+            return Part(name, body, center, size, size[0] * size[1] * size[2] * density, kind, color, what)
 
         side_h = H - c_bottom
         parts = [
@@ -329,19 +344,51 @@ class Case:
             for i, (x, y) in enumerate([(-1, y_f), (1, y_f), (-1, y_r), (1, y_r)]):
                 xc = x * (W / 2 - self.leg_inset - leg / 2)
                 parts.append(box(f"leg_{i}", "carcass", (xc, y, bh / 2), (leg, leg, bh), 650 * k, "leg"))
-        for i, item in enumerate(self.top_items):
-            parts += item.parts(i, H)
-
         inner_w = W - 2 * t
         shelf_d = D - tb - t - 0.01  # set back behind the doors
         y_shelf = -D / 2 + tb + shelf_d / 2
+        y_front = D / 2 - t - 0.01  # the shelves' front edge
+
+        # open shelves, bottom up: (surface height, clear height above it, the compartments across)
+        surfaces = []
+        for zone, lo, hi in self.bands():
+            if zone.kind == "open":
+                step = (hi - lo) / (zone.shelves + 1)
+                n = max(zone.cols, 1)
+                col_w = (inner_w - (n - 1) * t) / n
+                cells = [(-inner_w / 2 + c * (col_w + t), -inner_w / 2 + c * (col_w + t) + col_w) for c in range(n)]
+                surfaces += [(lo + s * step, step - (t if s < zone.shelves else 0), cells)
+                             for s in range(zone.shelves + 1)]  # fmt: skip
+        on_shelf: dict[int, list[TopItem]] = {}
+        for i, item in enumerate(self.top_items):
+            if item.shelf is None or not surfaces:
+                parts += item.parts(i, H)
+                continue
+            k = min(item.shelf, len(surfaces) - 1)
+            z, clear, cells = surfaces[k]
+            a, b = min(cells, key=lambda c: abs((c[0] + c[1]) / 2 - item.x))  # its compartment
+            w, dp = min(item.width, b - a - 0.02), min(item.depth, shelf_d - 0.01)
+            item = replace(
+                item,
+                width=w,
+                depth=dp,
+                height=min(item.height, clear - 0.015),
+                z=0.0,
+                x=max(a + w / 2 + 0.01, min(b - w / 2 - 0.01, item.x)),
+                y=y_front - dp / 2 - 0.005,
+            )
+            on_shelf.setdefault(k, []).append(item)
+            parts += item.parts(i, z)
+        first = 0  # index of this zone's lowest surface among `surfaces`
         for zi, (zone, lo, hi) in enumerate(self.bands()):
             if zi:  # the panel under each zone but the lowest
                 parts.append(box(f"zone_{zi}_floor", "carcass", (0, y_shelf, lo - t / 2), (inner_w, shelf_d, t), rho))
+            dividers = []
             if zone.kind != "doors" and zone.cols > 1:
                 col_w = (inner_w - (zone.cols - 1) * t) / zone.cols
                 for c in range(1, zone.cols):
                     x = -W / 2 + t + c * (col_w + t) - t / 2
+                    dividers.append((x - t / 2, x + t / 2))
                     parts.append(box(f"zone_{zi}_divider_{c}", "carcass", (x, tb / 2, (lo + hi) / 2),
                                      (t, D - tb, hi - lo), rho))  # fmt: skip
             if zone.kind == "drawers":
@@ -352,19 +399,30 @@ class Case:
                 shelf = (0, y_shelf, z - t / 2)
                 parts.append(box(f"zone_{zi}_shelf_{s}", "carcass", shelf, (inner_w, shelf_d, t), rho))
             kept = stuff.get(zone.contents)
-            if fill and kept and zone.fill > 0:
+            loose = zone.kind == "open"
+            if (fill or (shown and loose)) and kept and zone.fill > 0:
                 if kept.kg_per_m:  # on a rail near the top, hanging about a metre
                     hang = min(1.0, hi - lo - 0.08)
                     size = (inner_w * min(zone.fill, 1.0), min(0.50, shelf_d), hang)
                     parts.append(Part(f"zone_{zi}_{zone.contents}", "carcass", (0, y_shelf, hi - 0.08 - hang / 2),
-                                      size, kept.kg_per_m * size[0], "fill", kept.color))  # fmt: skip
+                                      size, kept.kg_per_m * size[0], "fill", kept.color, zone.contents))  # fmt: skip
                 else:  # on each shelf, pushed to the front
                     cw, cd, ch = inner_w * min(zone.fill, 1.0), min(shelf_d - 0.01, 0.30), min(step - t - 0.03, 0.32)
-                    y = D / 2 - t - 0.01 - cd / 2
+                    y = y_front - cd / 2
                     for s in range(zone.shelves + 1):
                         z = lo + s * step
-                        parts.append(box(f"zone_{zi}_{zone.contents}_{s}", "carcass", (0, y, z + ch / 2),
-                                         (cw, cd, ch), kept.kg_m3, "fill", kept.color))  # fmt: skip
+                        if not loose:  # behind doors: it rides with the piece
+                            parts.append(box(f"zone_{zi}_{zone.contents}_{s}", "carcass", (0, y, z + ch / 2),
+                                             (cw, cd, ch), kept.kg_m3, "fill", kept.color, zone.contents))  # fmt: skip
+                            continue
+                        here = on_shelf.get(first + s, [])
+                        taken = dividers + [(it.x - it.width / 2, it.x + it.width / 2) for it in here]
+                        for c, (a, b) in enumerate(runs(-inner_w / 2, inner_w / 2, taken, cw)):
+                            name = f"stuff_{zi}_{s}_{c}"
+                            parts.append(box(name, name, ((a + b) / 2, y, z + ch / 2), (b - a, cd, ch), kept.kg_m3,
+                                             "fill", kept.color, zone.contents))  # fmt: skip
+            if zone.kind == "open":
+                first += zone.shelves + 1
 
         for door in self.door_list():
             h = door.z_top - door.z_bottom
@@ -398,16 +456,27 @@ class Case:
             ]  # fmt: skip
             zone = zones[d.zone]
             kept = stuff.get(zone.contents or "clothes")
-            if fill and kept and zone.fill > 0:
+            if (fill or self.contents_known) and kept and zone.fill > 0:
                 # F2057 volume: inside the box, up to 1/8 in below the drawer above
                 fill_h = (box_h - db - 0.003) * min(zone.fill, 1.0)
                 size = (inner, depth - dt, fill_h)
                 center = (d.x, y_box + dt / 2, z_floor + db + fill_h / 2)
-                parts.append(box(f"{body}_fill", body, center, size, kept.kg_m3, "fill", kept.color))
+                parts.append(box(f"{body}_fill", body, center, size, kept.kg_m3, "fill", kept.color,
+                                 zone.contents or "clothes"))  # fmt: skip
         return parts
 
     def mass(self, fill: bool = False) -> float:
-        return sum(p.mass for p in self.parts(fill=fill) if p.kind != "load")
+        """Empty, or with everything it holds (`fill`); things standing on it never count. Empty means empty even
+        when the user said what's in the drawers (`contents_known`), which the tests count but the weight doesn't."""
+        return sum(p.mass for p in self.parts(fill=fill, shown=fill) if p.kind != "load" and (fill or p.kind != "fill"))
+
+    def held(self) -> dict[str, float]:
+        """What it holds inside and on its open shelves, by kind of contents: {"books": 38.2}."""
+        out: dict[str, float] = {}
+        for p in self.parts(fill=True):
+            if p.kind == "fill":
+                out[p.what] = out.get(p.what, 0.0) + p.mass
+        return out
 
     def top_drawer(self) -> Drawer | None:
         """Highest drawer whose top edge is within reach (<= 56 in); the F2057 load point."""
@@ -424,6 +493,33 @@ class Case:
 
 
 Dresser = Case  # the name before doors and shelves
+
+
+def runs(lo: float, hi: float, taken: list[tuple[float, float]], total: float, most: float = 0.28,
+         gap: float = 0.004) -> list[tuple[float, float]]:  # fmt: skip
+    """Where a shelf's contents go: the free stretches between the things standing on it and the dividers
+    (1 cm clear of them), each filled to the same share so that `total` metres are used (as far as they
+    fit), centered in its stretch and split into blocks at most `most` wide, so they can spill one by one.
+    Every compartment of a cube shelf gets its part, and no stretch is left with a sliver."""
+    x, free = lo, []
+    for a, b in sorted(taken):
+        if a - 0.01 - x > 0.03:
+            free.append((x, a - 0.01))
+        x = max(x, b + 0.01)
+    if hi - x > 0.03:
+        free.append((x, hi))
+    room = sum(b - a for a, b in free)
+    share = min(1.0, total / room) if room else 0.0
+    out = []
+    for a, b in free:
+        w = (b - a) * share
+        if w < 0.02:
+            continue
+        n = max(1, round(w / most + 0.49))
+        block = (w - (n - 1) * gap) / n
+        start = (a + b - w) / 2
+        out += [(start + j * (block + gap), start + j * (block + gap) + block) for j in range(n)]
+    return out
 
 
 @cache

@@ -25,13 +25,21 @@ List every free-standing thing in the photo that could tip or fall onto a person
   floor lamps, coat racks, gun safes, heavy tall decor.
 
 Leave out what can't tip: built-in or wall-hung kitchen cabinets, beds, sofas, tables, chairs, and
-anything already fixed to the wall. A TV, lamp or box standing on a piece goes in that piece's
-`on_top`, never as a piece of its own. Each item on top gets its own entry, and a stack of boxes is one entry.
+anything already fixed to the wall.
+
+Everything standing on a piece goes in that piece's `on_it`, never as a piece of its own: every separate
+thing on its top or on its open shelves, such as a TV, a lamp, a plant, a basket, a toy, a vase, a
+speaker, a box, or a stack of books lying flat. Each thing gets its own entry; a stack of boxes is one
+entry. Rows of books, folded clothes or dishes filling a shelf are that shelf's contents (the Describe
+step counts them), not things on it. Things behind doors or inside drawers are contents too.
 
 For each piece:
 - `name`: a few plain words a parent would use ("white dresser by the crib").
 - `sam_concept`: a short noun phrase that picks out this piece alone for an image segmentation model
-  ("white dresser", "tall bookcase"). Do the same for each item on top.
+  ("white dresser", "tall bookcase").
+- `on_it`: each thing standing on it, with its `name`, a `sam_concept` that picks out that thing alone
+  ("small potted plant", "wicker basket", "flat stack of books"), and `where`: `top` on the piece's top,
+  `shelf` on one of its open shelves.
 - `family`: what it is in everyday words ("chest of drawers", "kitchen range", "floor mirror").
 - `engine`: `case` when it is a box whose front is drawers, doors and/or open shelves (most
   furniture, ranges, filing cabinets, tool chests); `judge` for anything else.
@@ -70,17 +78,19 @@ Steps:
    recognize the product or the family has a typical weight in the references; otherwise leave it null.
 6. `drawer_runners`: `metal_slides` (most modern furniture, all steel cabinets), `wood_runners`
    (older solid-wood pieces), or `unknown`.
-7. For each item on top, in the order given, give: a one- or two-word `short_name`; `shape`
+7. For each thing on it (`on_it`), in the order given, give: a one- or two-word `short_name`; `shape`
    (`screen` for a flat-panel TV or monitor on a foot, `block` for anything else); its main material;
    whether it is `hard` (would it hurt if it fell on a child's head?); whether it is `breakable`
-   (breaks into sharp pieces); `kg` with its contents; and `depth_cm`. The `weights` reference has
-   typical values.
+   (breaks into sharp pieces); whether it is `tempting` (something a small child would climb to get: a
+   toy, the remote, a tablet, sweets); `kg` with its contents; `depth_cm`; and `shelf_from_top`: 0 when
+   it stands on the top, else which open shelf it stands on, counting down from the highest (1 is the
+   highest shelf surface inside the piece). The `weights` reference has typical values.
 8. `nearby`: what sleeps, sits or plays in front of it, in two or three plain words ("crib",
    "toddler bed", "sofa"), or null.
 9. `anchor_fix`: how this kind of piece is held against tipping, as a short imperative: "Strap it to
    the wall" for furniture, "Fit the anti-tip bracket" for a range, "Bolt it to the floor" for a safe.
-   `anchor_how`: one sentence on what that takes, such as "An anti-tip strap screwed into a stud.
-   About $15, 10 minutes."
+   `anchor`: the matching key of the fixes catalog: `strap` (furniture: straps into a wall stud),
+   `bracket` (a range's anti-tip bracket) or `tv_strap` (a TV standing on its own).
 
 ## Judge
 
@@ -90,8 +100,11 @@ could plausibly fall on someone is `maybe` at least.
 For each risk (child, adult, quake) give a `status` (`tips`, `maybe` or `holds`) and one short
 sentence (`says`) on what happens, in plain words, with no numbers. A risk that doesn't apply holds.
 Give one to three `fixes`, the most effective first. Each fix has a short title, a one-sentence
-`why`, an `icon` (`strap`, `lock`, `top`, `distance` or `move`), and `after`, the three statuses
-once it is done. If one fact would settle the verdict (is it anchored? which floor?), ask it as a
+`why`, an `icon`, and `after`, the three statuses once it is done. Icons: `strap` (tie or clip it to
+the wall), `lock` (latch it shut), `top` (take things off it or move it lower), `distance` (keep people
+out of where it would land), `tv` (strap a TV), `toy` (nothing tempting on it), `weight` (heavy things
+low), `hand` (keep everyday things within reach), `latch` (latch doors against shaking), `search`
+(check for a recall). If one fact would settle the verdict (is it anchored? which floor?), ask it as a
 `question` with two to four options, each with its `after` statuses. Otherwise set the question to null.
 `basis` names the guidance you relied on.
 

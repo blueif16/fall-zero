@@ -48,3 +48,13 @@ def test_real_products_carry_their_weight():
     """Products in the catalog are calibrated to their published weight (KALLAX is honeycomb board)."""
     _, kallax = examples()["ikea_kallax_2x4"]
     assert abs(kallax.mass() - 19.31) < 0.1 and kallax.density_scale < 0.7
+
+
+def test_labels_are_short_words_or_the_fallback():
+    label, NAME = knowledge.label, knowledge.NAME
+    assert label("plant pot") == "plant pot"
+    assert label("", "small vase with eucalyptus on shelf") == "small vase with eucalyptus"  # clipped, no dangling "on"
+    assert label("vaseria_leafy_short_name vaseeucalyptus" * 60, "vase") == "vase"
+    assert label("vase vase vase vase", "") == "" and label(None) == ""
+    assert label("low wooden media console under TV", "", NAME) == "low wooden media console under TV"
+    assert label("IKEA BESTÅ TV bench") == "IKEA BESTÅ TV bench"

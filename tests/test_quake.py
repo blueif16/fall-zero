@@ -3,7 +3,7 @@
 from dataclasses import replace
 
 from fall_zero.analyze import separate
-from fall_zero.furniture import Case, TopItem, Zone
+from fall_zero.furniture import Case, TopItem, Zone, examples
 from fall_zero.physics import rocking_threshold_g
 from fall_zero.sim import STAGES, ground_motion, shake
 
@@ -50,3 +50,14 @@ def test_drawers_slide_out_and_topple_the_chest_unless_interlocked():
     locked = [shake(NURSERY, seed=s, locks=True) for s in (1, 2, 3)]
     assert all(sum(len(st["drawers_out"]) for st in r.stages) <= 1 for r in locked)
     assert not any(r.fell_at for r in locked)
+
+
+def test_the_kitchen_hutch_spills_its_dishes_then_falls_in_violent_shaking():
+    """On an upper floor the hutch's loose dishes slide off its open shelves and it falls over in most of the
+    simulated earthquakes (seed 1 is borderline: it rocks to about 11 degrees and stays up)."""
+    runs = [shake(examples()["hutch_kitchen"][1], seed=s, building_hz=1.5, trace=True) for s in (1, 2, 3)]
+    fell = [r for r in runs if r.fell_at]
+    assert len(fell) >= 2 and all(r.drawers_out_at for r in runs)
+    for r in fell:
+        said = [text for _, text, *_ in r.trace["events"]]
+        assert said.index("Dishes fell off the shelves") < said.index("It fell over"), said

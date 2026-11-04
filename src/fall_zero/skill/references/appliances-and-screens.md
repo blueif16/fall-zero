@@ -4,7 +4,7 @@
 - TVs are involved in most child tip-over deaths in the US (CPSC). A flat-screen standing on a
   dresser or stand is top-heavy on a narrow foot: it falls first, often pulled by a child reaching
   for it or climbing the furniture under it.
-- A TV standing on a piece is an item on top, with shape `screen`. Its weight comes from its
+- A TV standing on a piece is a thing on it (on its top, or on an open shelf), with shape `screen`. Its weight comes from its
   measured width: about 0.0045 kg per square inch of diagonal with its stand (32 in ~5 kg,
   55 in ~14 kg, 65 in ~19 kg). Old CRT TVs are far heavier: 27 in ~35-45 kg.
 - A TV on its own floor stand, or on a cart, is judged (`engine: judge`). Carts and stands are tested to UL 1678.
@@ -27,7 +27,7 @@
   a few centimetres.
 - Describe it as a case (examples `range_30in` and the GE, Whirlpool, Frigidaire and Summit ones): a
   storage drawer, a bottom-hinged door, and a short open band for the cooktop. Material `steel`,
-  `known_mass_kg` from the example. `anchor_fix`: "Fit the anti-tip bracket".
+  `known_mass_kg` from the example. `anchor_fix`: "Fit the anti-tip bracket", `anchor`: `bracket`.
 - Ask whether the bracket is installed when you can't tell.
 
 ## Stacked washer and dryer

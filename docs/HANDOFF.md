@@ -1,8 +1,41 @@
-# Handoff: where Fall 0 stands (2026-10-27, second session)
+# Handoff: where Fall 0 stands (2026-10-27, fourth session)
 
 Meta Global AI Developer Hackathon. Building period Oct 27 – Nov 4, 2026. **Submission due Wed Nov 4,
 9:00 PM ET**, with a 3-minute demo video. The repo must be public, and the demo may show only work built
 during the event. The product spec is [PRD.md](PRD.md); [../README.md](../README.md) covers setup, commands and the model map.
+
+## Session 4 in short (read this first)
+
+The user's feedback this session drove the work:
+- "Simulate everything segmentation finds."
+- "We need 3D characters, not red boxes."
+- "Contents change the mass."
+- "Never show the same content on the left and the right."
+- "Research what people fear and what actually helps."
+
+[RESEARCH.md](RESEARCH.md) has the findings and sources. The advice lives in
+`skill/catalog/fixes.toml`. The work was split across parallel agents by file, then checked
+together. Details are under "Session 4's changes" below. The session-3 description that follows is
+still accurate except where session 4 says otherwise.
+
+## Deployed on Vercel (2026-10-28)
+
+https://fall-zero.vercel.app runs the current working tree (sessions 3–4 plus the deploy changes, all
+uncommitted). It was checked end to end on the live site:
+- The living-room sample was analyzed in 80 s.
+- The panel's three simulations loaded.
+- "Strap it" turned the piece to "holds".
+- The saved chat reopened.
+- No console errors.
+
+README "Deploying" covers the commands, the one key (`MODEL_API_KEY`, a Vercel Secret) and what differs
+there. The code changes were:
+- `store.py`: uploads and chats in Blob storage when deployed.
+- Earthquakes run serially there.
+- `MUJOCO_GL=disable` there.
+- The page shrinks photos, picks a video's frame and records WAV.
+- Saved chats are listed per browser.
+- The dev playgrounds are off.
 
 ## What works now
 
@@ -27,29 +60,136 @@ Cards arrive in about 14–17 s for a one-piece room, and about 30 s for a kitch
 - **Covered so far:** dressers, chests, wardrobes, bookcases, cube shelves, TV and media units,
   hutches, display cabinets, filing cabinets, tool chests, steel shelving and ranges, as 20 worked
   examples. Mirrors, lamps, safes, coat racks and stacked washers are judged.
-- **Room first (the user's rule, end of session 2):** people judge the setup as a whole, not object by
-  object. A photo with two or more pieces gets one room card:
+- **Room first (the user's rule):** people judge the setup as a whole, not object by object. A photo
+  with two or more pieces gets one room card in the chat:
   - the worst status for each risk across the pieces, with the numbers of the pieces behind it;
   - "Do these first": fixes merged across pieces, each with the whole room's state afterwards, and
     "I did this" applies it to every piece it covers;
   - the floor question, asked once;
   - piece chips.
 
-  Piece cards are hidden. Tapping a numbered outline on the photo, or a chip, opens one; the close
-  button hides it again. Its 3D viewer only loads when opened. A one-piece photo shows its piece card
-  as before. All of this is computed in the page (`renderRoom`, `roomFixes` in `web/app.js`).
-- **Outlines:** two pieces never share one (`analyze.assign_boxes`). A phrase like "small wooden
-  cabinet" also matched the hutch beside it, which hid marker 2 under marker 3.
-- **Piece cards:** same as before (verdict, three risk tiles, items on top, questions, fixes with
-  after-states, the 3D viewer). Judged pieces have "judged" tags and no viewer, and their fixes and
-  answers still update the verdict. The viewer has a "Drawer locks" variant.
-- **Tests:** `uv run pytest` runs 39 tests in about 35 s: physics vs MuJoCo (now including a bookcase, a
-  wardrobe and a range), cards, judged cards, every example, legacy reports, the skill loader, and the
-  earthquake with sliding drawers.
+  A one-piece photo gets its piece card in the chat (no viewer there any more). The agent's reply
+  speaks about the room (`agent._room` gives it the worst status per risk and the shared fixes).
+- **The panel (session 3, the user's rule: details never scroll the chat):** a large panel slides in
+  from the right, like the claude.ai artifact panel, and the chat narrows to the left. It opens:
+  - by itself on a new photo (wide screens only), on the room's worst scenario;
+  - from a risk tile (that scenario), a numbered outline or a chip (that piece), or a fix's "Show me"
+    (that fix previewed).
+
+  It has three scenario tabs, one big 3D viewer and a body below:
+  - **Room view:** "Stop it first" ranks the fixes for the chosen scenario across the room. Each card
+    shows its pieces turning green or not. "All together" plays the room with each threatened piece's
+    best fix done.
+  - **Piece view:** the camera flies to the piece and the rest fade. The body holds its items on top,
+    fixes (sorted for the scenario) and questions. "Room" goes back.
+  - Over the viewer: numbered 3D tags (tap one to open that piece), event pills ("1 fell over",
+    "1 knocked into 2"), and pills for the fixes to preview.
+  - Esc or × closes it. Phone width: full screen, pills in one scrolling row.
+  - All of this lives in the page (`openPanel`, `renderPanel`, `prevent`, `plan` in `web/app.js`).
+- **Whole-room simulation (session 3, the user's rule: "the full simulation with everything"):**
+  `room.scene` places every piece as the photo shows it and runs one MuJoCo model:
+  - Order and spacing come from the outlines, at the pieces' own m/px. Backs sit against one shared
+    wall. Judged pieces are translucent ghosts sized from their outline.
+  - **Earthquake:** one shake for all pieces, on the seed where most pieces do what they do in most of
+    their cached runs.
+  - **Child and adult:** in the room view every piece is loaded at once; in a piece view only that
+    piece.
+  - Contacts between pieces become "knocked into" events. In the living-room sample, the bookcase
+    falls onto the TV console in the earthquake.
+  - A new photo's three scenes are computed in the background while the reply is written
+    (`server._prepare_scenes`). One room quake takes about 2–4 s, child or adult about 0.5–1.5 s.
+- **Outlines:** the photo shows SAM's real masks, not boxes (`analyze.outline`):
+  - Douglas-Peucker cuts a path from 76 kB to under 1 kB, and holes are dropped. For example, the
+    hutch outline cuts around the high chair in front of it.
+  - Two pieces never share an outline (`analyze.assign_outlines`).
+  - Reports saved before session 3 have no outlines and still draw boxes.
+- **Piece cards:** verdict, three risk tiles (now buttons), items on top, questions, fixes with
+  after-states and "Show me". Judged pieces have "judged" tags, no "Show me", and their fixes and
+  answers still update the verdict.
+- **Tests:** `uv run pytest` runs 43 tests in about 50 s:
+  - physics vs MuJoCo, including a bookcase, a wardrobe and a range;
+  - cards, judged cards, every example, legacy reports, the skill loader;
+  - the earthquake with sliding drawers;
+  - room layout, a shared quake where each piece keeps its own strap, a child test that loads only its
+    piece, and outline simplification.
 
 The user's UX rule still holds: **nobody reads text.** The user's architecture rule, from this session:
 **no hard-coded objects or prompts.** Furniture knowledge lives in `src/fall_zero/skill/`, and the code is
 generic.
+
+## Session 4's changes (on branch `skill-and-zones`, not yet committed)
+
+1. **Everything on a piece is simulated.**
+   - The survey lists every separate thing standing on a piece, on top or on its open shelves
+     (`Thing.where`, `Spotted.on_it`). Old reports still load.
+   - SAM matches inside the piece's outline count for shelf things.
+   - `measure_items` places them on a shelf with `TopItem.shelf`, an index into
+     `Case.shelf_levels(("open",))`; `Case.base_of` gives the surface height.
+   - Open-shelf contents (books, dishes, toys) are always there, as loose bodies `stuff_<zone>_<shelf>_<chunk>`
+     split around dividers and around things on the shelf (`furniture.runs`). They spill in quakes:
+     "books fell off the shelves".
+   - Item hazards use the real drop height. Cards' items carry `where`, `drop_m`, `kg` and `tempting`.
+2. **Contents count in the mass.** `Case.mass()` is the empty weight. The "What's in the drawers?"
+   question (Full / About half / Nearly empty) sets the drawer fill and `Case.contents_known`, so every
+   test counts it. It is asked only when full versus empty changes a child or adult verdict. Details
+   carry `mass_full_kg` and `holds`.
+3. **Practical advice.** Every fix carries `kind` (a key of `catalog/fixes.toml`) and `how`: buy,
+   cost, time, tools, steps, avoid, renter, source.
+   - The describe step picks the anchor: `strap`, `bracket` for ranges, or `tv_strap`.
+   - Habit fixes are added when they apply: `tempting` (moves the items, physics re-run), `heavy_low`,
+     `within_reach`, `latches`, `recall`, `distance`.
+   - Icons are a fixed set: strap, lock, top, distance, tv, toy, weight, hand, latch, search.
+4. **Speed and the solver.** 2 ms steps without noslip, with ground motion still generated at 1 ms.
+   - Load tests: median 0.2 s. One-piece quakes: median 0.55 s.
+   - The quake outcomes match the old solver across 384 runs: 200 vs 202 pieces fell, 62 vs 63 shelves
+     spilled.
+   - Statics agree with the load-test simulation in 459 of 486 tests.
+5. **People instead of test weights** (`web/people.js`, `web/viewer.js`).
+   - Traces carry `actors`: who stands for the load (child or adult) and the action (stand on the
+     drawer or shelf, hang on a door, pull, or watch), plus the load point's body and local point.
+   - `loads` is now the ramp fraction, `pieces` carry x, y, width and depth, and `phases` gives settle
+     and ramp, or quiet before a quake.
+   - The viewer builds a procedural child (about 1.10 m) and an older adult (about 1.66 m) with
+     two-bone IK. They walk in, climb or grab, and fall back when the piece tips.
+   - The red weights are gone. Shelf contents are drawn as spines, the floor shows where a piece
+     lands, and `onTip(index, seconds)` reports how long it took to fall.
+6. **Left = choices, right = simulation, never duplicated** (`web/app.js`, `web/style.css`).
+   - **Left:** the photo, the reply, and one card with "Help me be sure" questions, "Do these first"
+     fixes (cost and time chips, "Show me", "I did this") and "Good habits" chips. A glance row with
+     the three scenario statuses shows only while the panel is closed.
+   - **Right:** the tabs, the viewer with fix pills, what happens to each piece, what would fall, the
+     previewed fix's how-to, and the piece's fact tiles (size, empty → full weight, what it holds).
+   - Every model-written label is clipped to one line.
+7. **Robustness.**
+   - `knowledge.label` and `knowledge.tidy` clean garbled model text where reports and cards are
+     built. Once the model returned a 2,524-character item name.
+   - One failed SAM call retries once, then leaves that thing without an outline.
+   - A judged piece's question disappears once a fix settles it.
+   - Loose things (items, shelf contents) have their frame at their own center, and their speed is capped
+     at 8 m/s (`sim._Loose`). A vase squeezed between a falling bookcase and the floor was shot out at
+     37 m/s and slid 212 m. The viewer also hides and never frames anything outside the room.
+8. Tests: 55, covering shelf placement, the drawers question, fixes from the catalog, labels, SAM
+   failure, the kitchen hutch quake, judged questions and the squeezed-item runaway.
+
+## Session 3's changes (on branch `skill-and-zones`, uncommitted along with session 4)
+
+1. `sim.py` builds any number of pieces into one model (`Placed`, `Ghost`, `scene_mjcf`,
+   `simulate_scene`, `shake_scene`, `quake_scenario`). Each piece's names carry a prefix.
+   - A lone piece gets byte-identical MJCF to before, checked over 1,228 piece/scenario pairs.
+   - `simulate` and `shake` are now one-piece wrappers.
+   - Traces carry every strap, each piece's carcass body and height (for the tags), ghosts, and events
+     tagged with piece numbers.
+2. `room.py`: `layout` (photo order to metres) and `scene` (cached per answers, scenario and focus;
+   concurrent requests wait for the first). Endpoint: `POST /api/scene`.
+3. `analyze.py`: `assign_outlines` (was `assign_boxes`), `outline`, and `on_top` with `union_box`.
+   Reports now hold `outline` for pieces and items, and cards pass it on.
+4. **Mirroring fixed:** facing a piece's front (+y) you look along -y, so the photo's left is +x.
+   `room.layout` and the x of items on top (`measure_items`) follow this now. Older reports keep their
+   mirrored items, which is harmless for the physics.
+5. Web: the panel (`index.html` skeleton, `style.css` panel section, `app.js`). `viewer.js` handles
+   several straps, transparent ghosts, the 3D tags, focus with fading, camera flights, and framing
+   from the bounding sphere. The old inline "See it happen" block is gone.
+6. `agent.py`: the reply speaks about the room when there are two or more pieces.
 
 ## Session 2's changes (on branch `skill-and-zones`)
 
@@ -77,9 +217,14 @@ generic.
 | `src/fall_zero/assess.py` | entry → card (`card`: `assess` for built pieces, `judged_card` for judged ones); risks, item hazards, fixes, questions, earthquakes, viewer motion |
 | `src/fall_zero/furniture.py` | `Case` (zones → panels, drawers, doors, shelves, contents), `TopItem`, catalog loaders, `with_mass` |
 | `src/fall_zero/physics.py` | statics, the three child tests generalized to drawers, doors and shelves, adult grab, rocking threshold |
-| `src/fall_zero/sim.py` | MuJoCo model: drawers on slides, doors on hinges (degrees in MJCF), loose items, `shake`, `Trace` |
-| `src/fall_zero/server.py` | FastAPI: `/api/turn`, `/api/assess`, `/api/simulate`, `/api/threads`, static web (no-cache) |
-| `web/` | chat, cards (judged tags), three.js viewer |
+| `src/fall_zero/sim.py` | MuJoCo model of one piece or a room (`Placed`, `scene_mjcf`): drawers on slides, doors on hinges (degrees in MJCF), loose items, `simulate_scene`, `shake_scene`, `Trace` |
+| `src/fall_zero/room.py` | the whole room as one scene: `layout` from the outlines, `scene` for the panel |
+| `src/fall_zero/server.py` | FastAPI: `/api/turn`, `/api/assess`, `/api/scene`, `/api/simulate`, `/api/threads`, `/files`, static web (no-cache) |
+| `src/fall_zero/store.py` | runs and saved chats: `out/` locally, the private Vercel Blob store when deployed |
+| `app.py`, `vercel.json`, `.vercelignore` | the Vercel entrypoint, the function's 300 s, and what never gets uploaded |
+| `web/` | chat (`app.js`: left = choices, right = panel), the three.js viewer (`viewer.js`), the procedural people (`people.js`) |
+| `src/fall_zero/skill/catalog/fixes.toml` | practical advice per fix kind: buy, cost, time, tools, steps, avoid, renter, source |
+| `docs/RESEARCH.md` | who gets hurt and how, what people believe and fear, what works; sources |
 
 To teach it a new kind of piece, add a worked example to `catalog/examples.toml`, plus a reference
 paragraph if it needs knowledge. To add a material or contents, edit the catalog. No code changes.
@@ -96,8 +241,29 @@ paragraph if it needs knowledge. To add a material or contents, edit the catalog
   by the PIDs from `ss -ltnp` instead.
 - **Muse Spark function tools work** (2–10 s per round trip), but the skill passes references by code
   instead, to save the round trip.
+- **Handedness:** MuJoCo +y is a piece's front. Seen from the front, +x is on the viewer's left, so
+  anything placed from the photo uses x = (center - photo x) * scale.
+- **Viewer bounding boxes:** call `scene.updateMatrixWorld(true)` before measuring freshly posed
+  bodies. Exclude a lone piece's own `p0_wall`, or the camera frames a 4 m wall.
 - **Pyright:** flags the dynamic `Literal[...]` schemas and the OpenAI calls; ruff is clean.
-- **Keys:** only in `.env`. Rotate the Meta and Baseten keys (they were pasted in an early transcript).
+- **SAM can return an undecodable mask** ("Mask payload could not be decoded"). Each phrase now fails
+  soft; if a whole photo fails, retry first.
+- **Muse Spark can ramble** in a short field (a 2,524-character name). Everything shown goes through
+  `knowledge.label`.
+- **Saved chats store their cards.** Chats from before session 4 show the older fix cards (no `how`)
+  until a re-check.
+- **Keys:** only in `.env`, plus `MODEL_API_KEY` as a Vercel Secret (README, "Deploying"). Rotate the Meta
+  and Baseten keys (they were pasted in an early transcript), then update the Vercel one.
+- **Vercel:**
+  - **What it uploads:** the CLI reads `.vercelignore`, not `.gitignore`; that is what keeps `.env` off it.
+  - **`.env.local`:** written by `vercel link` and holds the Blob token. The app never reads it, so local
+    runs keep using `out/`.
+  - **Startup:** importing MuJoCo there needs `MUJOCO_GL=disable`; otherwise it looks for libEGL and every
+    request fails.
+  - **A tapped answer or fix** takes about 10 s there, against 1–2 s locally, because its earthquakes run
+    on one CPU.
+  - **Anyone with the URL can run the pipeline on our Meta key.** A Vercel Firewall rate limit on
+    `/api/turn` would cap that.
 
 ## Assumptions to replace with sources
 
@@ -113,29 +279,30 @@ paragraph if it needs knowledge. To add a material or contents, edit the catalog
 
 ## Next steps, in the order I'd take them
 
-0. **The user has more flow improvements for the next session**; ask for their list first. Already
-   known:
-   - **One simulation of the whole room:** the user said "the simulation is done as a whole". Today
-     each piece is simulated on its own, and the room card only combines their verdicts. The next step
-     is one MuJoCo scene with every piece placed from the photo (left to right from the outlines,
-     against the back wall), shaken together and shown in one viewer in the room card. That also
-     catches a piece falling into another.
-   - The room card's text and fixes come from the page's own merge of the piece cards. The agent's
-     one-line reply should talk about the room, not the worst piece.
+0. **Ask the user** what they think of the people, the shelf items and the left/right split, and
+   whether to commit sessions 3 and 4 (both uncommitted on `skill-and-zones`). Open questions:
+   - **An open drawer or door props the piece.** In 20 unstrapped cases (the filing cabinet, a HEMNES
+     shoe cabinet, the GE, Whirlpool and Summit ranges, the Ashley server) it hits the floor and props
+     the piece after 2–10°. Statics calls that "tips", so the animation shows the piece caught while
+     the card says "Tips". This is likely in the kitchen demo. Decide whether a propped piece counts
+     as tipping (the CPSC rule counts it) and show it that way, or change the verdict.
+   - **Strapped cases:** in 7 of them, statics caps the strap at its 50 lbf rating, but the simulated
+     strap never gives.
+   - **Hutch ledge:** things on its mid-height ledge (a jar, a cloth) get no outline and are put on
+     top. The template needs a set-back upper or ledge.
+   - The room verdict tiles still come from the per-piece cards; pieces stand in one row against
+     one wall (both carried over from session 3).
 1. **Merge** branch `skill-and-zones` into master when the user okays it.
-2. **Real product data:** done for a first pass. `catalog/examples.toml` has 44 sourced products
-   (IKEA MALM, HEMNES, BRIMNES, NORDLI, PAX, BILLY, KALLAX, BESTÅ, LACK, DETOLF; Sauder, South
-   Shore, Delta Children, HON, Husky, Edsal; GE, Whirlpool, Frigidaire and Summit ranges...) on top of
-   the 20 generic examples, each with a `# source:` line saying net, package or shipping weight. Each
-   describe call reads only the 16 examples whose names share words with the piece
-   (`knowledge.shortlist`); the full list costs about 2 s more per call. A picked product keeps its
-   calibration to its real weight. Still to do: front-legs-only pieces (HEMNES shoe and mirror
-   cabinets) are modeled on four legs, and side-by-side fronts (a drawer stack between door bays)
-   are shown as doors.
-3. **Demo video (3 min):** kitchen, living room and nursery; the earthquake tab with drawers sliding
-   out; the drawer-lock and strap variants; one judged mirror.
-4. **Survey speed:** 8–11 s on busy rooms. Trim `rooms.md`, or let the survey stream pieces.
-5. **Earthquake:** doors swinging open (magnetic catches); recorded accelerograms.
+2. **Demo video (3 min):**
+   - the living room: the child climbing the TV stand, the bookcase spilling books in the quake;
+   - the kitchen: the range bracket fix;
+   - the nursery: a child climbing the dresser drawers, "Fell in 1.2 s", strapped vs not;
+   - one judged mirror.
+3. **Recall check:** match a recognized brand and model against CPSC recalls (sourced), rather than
+   only the generic "check cpsc.gov/Recalls" habit.
+4. **Survey speed:** 8–15 s on busy rooms. Trim `rooms.md`, or let the survey stream pieces.
+5. **Earthquake:** doors swinging open (magnetic catches); recorded accelerograms; people in the quake
+   scene (a child playing in the fall zone) if it reads well.
 6. **Validation:** pull tests against `pull_test_prediction_N`; source the assumptions above.
 7. **Hackathon:** make the repo public, polish the README, build the Muse connector from the PRD, and
    use more than one video frame.

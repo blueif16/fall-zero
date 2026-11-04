@@ -6,8 +6,10 @@ uv run fall-zero serve   # http://localhost:8011, API docs at /docs
 import asyncio
 import base64
 import json
+import os
 import re
 import tempfile
+import threading
 import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -15,22 +17,21 @@ from functools import partial
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from fall_zero import agent, meta, voice
+from fall_zero import agent, meta, room, store, voice
 from fall_zero.analyze import VIDEO_SUFFIXES, analyze
 from fall_zero.assess import CARD_STATUSES, assess_all, card, trajectory, warm
 from fall_zero.clients import NotConfigured, chat, providers
 
-ROOT = Path(__file__).resolve().parents[2]
-RUNS = ROOT / "out" / "web"  # one folder per analyzed upload: the photo, still.jpg, report.json
-RUNS.mkdir(parents=True, exist_ok=True)
-THREADS = ROOT / "out" / "threads"  # saved chats, one JSON file each, so they can be reopened
-THREADS.mkdir(parents=True, exist_ok=True)
+ROOT = store.ROOT
+# Each analyzed upload is a run: web/<run>/ holds the photo, still.jpg and report.json; saved chats are
+# threads/<id>.json. Both live in the store (fall_zero/store.py): out/ locally, Vercel Blob when deployed.
+DEPLOYED = bool(os.environ.get("VERCEL"))
 
 
 @asynccontextmanager
@@ -59,20 +60,9 @@ class ChatIn(BaseModel):
     model: str | None = None
 
 
-@app.post("/api/chat")
-def chat_route(body: ChatIn) -> dict:
-    return {"text": chat(body.prompt, provider=body.provider, model=body.model)}
-
-
 class ImageIn(BaseModel):
     prompt: str
     size: str | None = None
-
-
-@app.post("/api/image")
-def image_route(body: ImageIn) -> dict:
-    png = meta.generate_image(body.prompt, size=body.size)
-    return {"image": f"data:image/png;base64,{base64.b64encode(png).decode()}"}
 
 
 async def _save(upload: UploadFile, tmp: str) -> Path:
@@ -81,15 +71,26 @@ async def _save(upload: UploadFile, tmp: str) -> Path:
     return path
 
 
-@app.post("/api/segment")
-async def segment_route(image: Annotated[UploadFile, File()], concept: Annotated[str, Form()]) -> dict:
-    with tempfile.TemporaryDirectory() as tmp:
-        segments = await meta.segment_image(await _save(image, tmp), concept, include_confidence=True)
-    return {
-        "segments": [
-            {"id": s.object_id, "box": s.box, "confidence": s.confidence, "svg_path": s.svg_path} for s in segments
-        ]
-    }
+if not DEPLOYED:  # model playgrounds for local work; deployed they'd hand anyone the Meta key
+
+    @app.post("/api/chat")
+    def chat_route(body: ChatIn) -> dict:
+        return {"text": chat(body.prompt, provider=body.provider, model=body.model)}
+
+    @app.post("/api/image")
+    def image_route(body: ImageIn) -> dict:
+        png = meta.generate_image(body.prompt, size=body.size)
+        return {"image": f"data:image/png;base64,{base64.b64encode(png).decode()}"}
+
+    @app.post("/api/segment")
+    async def segment_route(image: Annotated[UploadFile, File()], concept: Annotated[str, Form()]) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            segments = await meta.segment_image(await _save(image, tmp), concept, include_confidence=True)
+        return {
+            "segments": [
+                {"id": s.object_id, "box": s.box, "confidence": s.confidence, "svg_path": s.svg_path} for s in segments
+            ]
+        }
 
 
 @app.post("/api/transcribe")
@@ -122,19 +123,21 @@ async def turn(
     previous_response_id: Annotated[str, Form()] = "",
     context: Annotated[str, Form()] = "",
     media: Annotated[UploadFile | None, File()] = None,
+    frame_at_s: Annotated[float | None, Form()] = None,
 ) -> StreamingResponse:
     """One chat turn, streamed as NDJSON events:
     step {text} ... report {run, still, cards, report} ... delta {text} ... done {response_id} | error {text}.
     With `media` (a photo or video) the pipeline runs first; without it the agent just answers.
-    `context` is the page's current cards (after the user's taps), so follow-ups see them."""
+    `context` is the page's current cards (after the user's taps), so follow-ups see them.
+    The page sends a video as its sharpest frame, and `frame_at_s` is where in the video it was."""
     upload = None
     if media and media.filename:
         suffix = Path(media.filename).suffix.lower()
         is_video = (media.content_type or "").startswith("video/") or suffix in VIDEO_SUFFIXES
         if not (is_video or (media.content_type or "").startswith("image/")):
             return StreamingResponse(iter([_line(type="error", text="Send a photo or a video.")]))
-        run = RUNS / uuid.uuid4().hex[:12]
-        run.mkdir()
+        run = store.LOCAL / "web" / uuid.uuid4().hex[:12]
+        run.mkdir(parents=True)
         upload = run / f"upload{suffix or ('.mp4' if is_video else '.jpg')}"
         upload.write_bytes(await media.read())
 
@@ -147,8 +150,13 @@ async def turn(
                         yield _line(type="step", text=value)
                     else:
                         report, image = value, Path(value["image"])
+                if frame_at_s is not None:
+                    report["frame_at_s"] = frame_at_s
+                kept = [f"web/{upload.parent.name}/{f}" for f in (upload.name, image.name, "report.json")]
+                await run_in_threadpool(store.keep, *kept)
                 yield _line(type="step", text="Shaking it in simulated earthquakes · MuJoCo")
                 cards = await run_in_threadpool(assess_all, report, True)
+                _prepare_scenes(report, cards)
                 others = [p["piece"]["name"] for p in report["pieces"] if p["status"] not in CARD_STATUSES]
                 files = f"/files/{upload.parent.name}"
                 yield _line(type="report", run=upload.parent.name, still=f"{files}/{image.name}",
@@ -163,17 +171,46 @@ async def turn(
     return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
+RISKS = ("child", "adult", "quake")
+
+
+def _prepare_scenes(report: dict, cards: list[dict]) -> None:
+    """Simulate the whole room in the background while the reply is written, worst scenario first: it
+    is the one the page opens with."""
+    if not cards:
+        return
+    worst = next((k for k in RISKS if any(c["risks"][k]["status"] == "tips" for c in cards)), "quake")
+    answers = [c["answers"] for c in cards]
+    order = [worst] + [k for k in RISKS if k != worst]
+    threading.Thread(target=lambda: [room.scene(report, answers, k) for k in order], daemon=True).start()
+
+
 class AssessIn(BaseModel):
     run: str
     piece: int  # index among the carded pieces, as in the report event's `cards`
     answers: dict = {}
 
 
+def _run_file(run: str, name: str) -> Path:
+    if not (re.fullmatch(r"[0-9a-f]{12}", run) and re.fullmatch(r"[\w-]+\.\w+", name)):
+        raise HTTPException(404, "unknown file")
+    if not (path := store.local(f"web/{run}/{name}")):
+        raise HTTPException(404, "unknown file")
+    return path
+
+
+def _report(run: str) -> dict:
+    return json.loads(_run_file(run, "report.json").read_text())
+
+
+@app.get("/files/{run}/{name}")
+def run_file(run: str, name: str) -> FileResponse:
+    """A run's photo and still; they never change once written."""
+    return FileResponse(_run_file(run, name), headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
 def _entry(run: str, piece: int) -> dict:
-    if not re.fullmatch(r"[0-9a-f]{12}", run) or not (RUNS / run / "report.json").exists():
-        raise HTTPException(404, "unknown run")
-    report = json.loads((RUNS / run / "report.json").read_text())
-    carded = [p for p in report["pieces"] if p["status"] in CARD_STATUSES]
+    carded = [p for p in _report(run)["pieces"] if p["status"] in CARD_STATUSES]
     if not 0 <= piece < len(carded):
         raise HTTPException(404, "unknown piece")
     return carded[piece]
@@ -200,39 +237,64 @@ def simulate_route(body: SimulateIn) -> dict:
     return trajectory(entry, body.answers, body.scenario, body.variant, body.seed)
 
 
-def _thread_file(tid: str) -> Path:
+class SceneIn(BaseModel):
+    run: str
+    answers: list[dict] = []  # each carded piece's answers, a previewed fix's answer added
+    scenario: Literal["quake", "child", "adult"] = "quake"
+    focus: int | None = None  # in the child and adult tests, only this piece is loaded
+
+
+@app.post("/api/scene")
+def scene_route(body: SceneIn) -> dict:
+    """The whole room in one simulation, every piece placed as in the photo, for the panel's viewer."""
+    return room.scene(_report(body.run), body.answers, body.scenario, body.focus)
+
+
+Owner = Annotated[str, Header(alias="X-Owner")]
+
+
+def _folder(owner: str) -> str:
+    """Deployed, each browser keeps its chats under its own id (X-Owner, kept in its localStorage), so no one
+    lists anyone else's; locally they're all yours, in one folder."""
+    if not store.REMOTE:
+        return "threads/"
+    if not re.fullmatch(r"[0-9a-f]{32}", owner):
+        raise HTTPException(400, "no owner")
+    return f"threads/{owner}/"
+
+
+def _thread_name(tid: str, owner: str) -> str:
     if not re.fullmatch(r"[0-9a-f]{12}", tid):
         raise HTTPException(404, "unknown thread")
-    return THREADS / f"{tid}.json"
+    return f"{_folder(owner)}{tid}.json"
 
 
 @app.get("/api/threads")
-def list_threads() -> list[dict]:
+def list_threads(owner: Owner = "") -> list[dict]:
     """Saved chats, newest first, without their messages."""
-    threads = [json.loads(f.read_text()) for f in THREADS.glob("*.json")]
+    threads = [json.loads(body) for n in store.names(_folder(owner)) if n.endswith(".json") and (body := store.read(n))]
     keep = ("id", "title", "updated", "thumb", "status")
     return sorted(({k: t.get(k) for k in keep} for t in threads), key=lambda t: t["updated"] or "", reverse=True)
 
 
 @app.get("/api/threads/{tid}")
-def get_thread(tid: str) -> dict:
-    path = _thread_file(tid)
-    if not path.exists():
+def get_thread(tid: str, owner: Owner = "") -> dict:
+    if (body := store.read(_thread_name(tid, owner))) is None:
         raise HTTPException(404, "unknown thread")
-    return json.loads(path.read_text())
+    return json.loads(body)
 
 
 @app.put("/api/threads/{tid}")
-def save_thread(tid: str, thread: Annotated[dict, Body()]) -> dict:
+def save_thread(tid: str, thread: Annotated[dict, Body()], owner: Owner = "") -> dict:
     """The page saves the whole chat after every turn and every tap: messages, cards and answers."""
     thread |= {"id": tid, "updated": datetime.now(UTC).isoformat()}
-    _thread_file(tid).write_text(json.dumps(thread))
+    store.write(_thread_name(tid, owner), json.dumps(thread).encode())
     return {"updated": thread["updated"]}
 
 
 @app.delete("/api/threads/{tid}")
-def delete_thread(tid: str) -> dict:
-    _thread_file(tid).unlink(missing_ok=True)
+def delete_thread(tid: str, owner: Owner = "") -> dict:
+    store.delete(_thread_name(tid, owner))
     return {"deleted": tid}
 
 
@@ -246,6 +308,5 @@ class Revalidated(StaticFiles):
         return response
 
 
-app.mount("/files", StaticFiles(directory=RUNS), name="files")
 app.mount("/samples", StaticFiles(directory=ROOT / "samples"), name="samples")
 app.mount("/", Revalidated(directory=ROOT / "web", html=True), name="web")  # last: catches every other path

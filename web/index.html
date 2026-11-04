@@ -37,6 +37,7 @@
     <div id="history-list" class="history-list"></div>
   </aside>
 
+  <div class="chat">
   <main id="thread">
     <section id="empty" class="empty">
       <h1 class="logo hero-logo">Fall<span class="zero">0</span></h1>
@@ -94,6 +95,36 @@
       </div>
     </form>
   </footer>
+  </div>
+
+  <!-- the room, a scenario or one piece, with the whole room's simulation; opens from the right -->
+  <aside id="panel" class="panel" aria-label="Simulation" inert>
+    <header class="p-head">
+      <button class="p-back" type="button" title="Back to the whole room" hidden>
+        <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg><span>Room</span>
+      </button>
+      <div class="p-who"></div>
+      <button class="p-close" type="button" title="Close (Esc)" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <nav class="p-tabs" aria-label="Scenario"></nav>
+    <div class="p-stage">
+      <div class="viewer">
+        <div class="tags"></div>
+        <div class="cap"></div>
+        <ul class="events"></ul>
+        <div class="p-variants"></div>
+        <button class="replay" type="button" hidden>
+          <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4.5h4.5"/></svg>Replay
+        </button>
+        <div class="loading"><span class="spin"></span><span>Simulating the room…</span></div>
+        <div class="nosim" hidden></div>
+        <div class="bar"><i></i></div>
+      </div>
+    </div>
+    <section class="p-body"></section>
+  </aside>
 
   <input id="file" type="file" accept="image/*,video/*" hidden>
   <div id="drop" class="drop" hidden><div>Drop the photo or video</div></div>

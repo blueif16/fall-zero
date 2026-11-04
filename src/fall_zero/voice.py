@@ -22,9 +22,20 @@ RATE = 24_000
 FRAME_BYTES = RATE * 80 // 1000 * 2  # 80 ms of int16 samples
 
 
+def _ready(path: Path) -> bool:
+    try:
+        with wave.open(str(path)) as w:
+            return (w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getcomptype()) == (1, 2, RATE, "NONE")
+    except (wave.Error, EOFError):
+        return False
+
+
 def to_wav(src: str | Path, dst: str | Path | None = None) -> Path:
-    """Convert any audio/video file to the 24 kHz mono PCM WAV the API accepts."""
+    """Convert any audio/video file to the 24 kHz mono PCM WAV the API accepts. The web page already
+    records one (there's no ffmpeg on Vercel), and that is used as it is."""
     src = Path(src)
+    if _ready(src):
+        return src
     dst = Path(dst) if dst else src.with_suffix(".24k.wav")
     subprocess.run(
         [

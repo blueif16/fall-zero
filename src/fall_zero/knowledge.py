@@ -13,6 +13,7 @@ round trip (a function-tool lookup would add 2-10 s per call).
 """
 
 import re
+from collections import Counter
 from functools import cache
 from pathlib import Path
 from typing import Literal
@@ -20,7 +21,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from fall_zero import meta
-from fall_zero.furniture import SKILL_DIR, contents, examples, materials
+from fall_zero.furniture import SKILL_DIR, catalog, contents, examples, materials
 
 EFFORT = "low"  # sizes pieces as well as medium does, in about half the time
 
@@ -56,7 +57,11 @@ RefName = Literal[tuple(references())]  # type: ignore[valid-type]
 MaterialName = Literal[tuple(materials())]  # type: ignore[valid-type]
 ContentsName = Literal[(*contents(), "none")]  # type: ignore[valid-type]
 ExampleName = Literal[(*examples(), "none")]  # type: ignore[valid-type]
+# the fixes catalog's ways of holding a piece down (`anchors = true`): a strap, a range's bracket, a TV strap
+AnchorName = Literal[tuple(k for k, v in catalog("fixes").items() if v.get("anchors"))]  # type: ignore[valid-type]
 Status = Literal["tips", "maybe", "holds"]
+# the fix icons the page draws
+Icon = Literal["strap", "lock", "top", "distance", "tv", "toy", "weight", "hand", "latch", "search"]
 
 
 # --- survey ----------------------------------------------------------------------------------------
@@ -65,6 +70,7 @@ Status = Literal["tips", "maybe", "holds"]
 class Thing(BaseModel):
     name: str
     sam_concept: str
+    where: Literal["top", "shelf"] = "top"  # on the piece's top, or on one of its open shelves
 
 
 class Spotted(BaseModel):
@@ -73,7 +79,7 @@ class Spotted(BaseModel):
     family: str
     engine: Literal["case", "judge"]
     references: list[RefName]
-    on_top: list[Thing]
+    on_it: list[Thing]  # every separate thing standing on it, on top or on its open shelves
 
 
 class Survey(BaseModel):
@@ -86,7 +92,7 @@ def survey(image: Path) -> Survey:
     """Everything in the photo that could tip or fall onto someone."""
     found = meta.respond_json("Survey this room.", Survey, images=[image], effort=EFFORT,
                               instructions=instructions("Survey", ["rooms"]))  # fmt: skip
-    names = {t.name.lower() for p in found.pieces for t in p.on_top}
+    names = {t.name.lower() for p in found.pieces for t in p.on_it}
     # something listed both on a piece and as a piece of its own stays on its piece
     found.pieces = [p for p in found.pieces if p.name.lower() not in names]
     return found
@@ -112,8 +118,10 @@ class ItemSpec(BaseModel):
     material: str
     hard: bool
     breakable: bool
+    tempting: bool
     kg: float
     depth_cm: float
+    shelf_from_top: int  # 0 on top; on an open shelf, 1 for the highest, 2 the next one down...
 
 
 class CaseSpec(BaseModel):
@@ -130,10 +138,10 @@ class CaseSpec(BaseModel):
     zones: list[ZoneSpec]
     brand_model: str | None
     size_basis: str
-    items_on_top: list[ItemSpec]
+    on_it: list[ItemSpec]
     nearby: str | None
     anchor_fix: str
-    anchor_how: str
+    anchor: AnchorName
 
 
 def zones_text(zones) -> str:
@@ -189,11 +197,12 @@ def catalogs_text(keys: list[str] | None = None) -> str:
 
 def describe(image: Path, piece: Spotted, room: str = "") -> CaseSpec:
     """The piece as a case for the engine."""
-    on_top = "; ".join(f"{i + 1}. {t.name}" for i, t in enumerate(piece.on_top))
+    on_it = "; ".join(f"{i + 1}. {t.name} ({'on top' if t.where == 'top' else 'on a shelf'})"
+                      for i, t in enumerate(piece.on_it))  # fmt: skip
     task = f"In this photo of a {room or 'room'}, describe the {piece.name} ({piece.family}) for the engine. " + (
-        f"Items on top, in this order: {on_top}." if on_top else "Nothing stands on top: items_on_top is empty."
+        f"Things on it, in this order: {on_it}." if on_it else "Nothing stands on it: on_it is empty."
     )
-    refs = [*piece.references, *(["weights"] if piece.on_top else [])]
+    refs = [*piece.references, *(["weights"] if piece.on_it else [])]
     examples_for = catalogs_text(shortlist(f"{piece.name} {piece.family}"))
     return meta.respond_json(task, CaseSpec, images=[image], effort=EFFORT,
                              instructions=instructions("Describe", refs) + "\n\n" + examples_for)  # fmt: skip
@@ -216,7 +225,7 @@ class Risk(BaseModel):
 class JudgedFix(BaseModel):
     title: str
     why: str
-    icon: Literal["strap", "lock", "top", "distance", "move"]
+    icon: Icon
     after: Statuses
 
 
@@ -245,3 +254,90 @@ def judge(image: Path, piece: Spotted, room: str = "", people: str = "") -> Judg
     task = f"In this photo of a {where}, judge the {piece.name} ({piece.family})."
     return meta.respond_json(task, Judgment, images=[image], effort=EFFORT,
                              instructions=instructions("Judge", piece.references))  # fmt: skip
+
+
+# --- what the model wrote, fit for the page --------------------------------------------------------
+# A model can ramble or loop: once a vase's "short name" came back as 2,524 characters of "vaseria_leafy_short_name
+# vaseeucalyptus...". Everything it writes that the page shows passes `label`, held to its kind's characters and
+# words, both when the report is built and when a card or a scene is built from a saved one (`tidy`).
+SHORT = (28, 4)  # what a thing or a place is called: "small vase with eucalyptus", "play rug"
+NAME = (40, 7)  # a piece's name, a fix's title, an answer: "low wooden media console under TV"
+LINE = (160, 32)  # a sentence: what a risk does, why a fix works, a question
+JOINERS = {"a", "an", "and", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "under", "with"}
+
+
+def garbled(text: str) -> bool:
+    """Reads as garbage, not words: an identifier (snake_case, braces, an id), a run-on word, one word over and over."""
+    words = [w.lower() for w in re.findall(r"[^\W\d_]+", text)]
+    if not words or re.search(r"[_{}<>\[\]\\|=^@`]|[0-9a-f]{8}-[0-9a-f]{4}", text, re.I):
+        return True
+    top = max(Counter(w for w in words if len(w) > 2).values(), default=0)
+    return max(map(len, words)) > 20 or (top >= 3 and top * 3 > len(words))
+
+
+def clip(text: str, kind: tuple[int, int]) -> str:
+    """The first whole words within `kind`'s characters and words, without a dangling "with" or "on"."""
+    most, n = kind
+    out: list[str] = []
+    for w in text.split():
+        if len(out) == n or len(" ".join([*out, w])) > most:
+            break
+        out.append(w)
+    while out and out[-1].lower().strip(",;:") in JOINERS:
+        out.pop()
+    return " ".join(out).rstrip(",;:-–—") or text[:most]
+
+
+def label(text: str | None, fallback: str | None = "", kind: tuple[int, int] = SHORT) -> str:
+    """`text` as the page shows it. Empty, garbled or rambling text (past `kind`'s characters or words) gives way
+    to `fallback` (the survey's name for the thing); text or a fallback only a little too long is clipped to whole
+    words. "" when neither will do."""
+    most, n = kind
+    usable = [t for t in (" ".join(str(s or "").split()) for s in (text, fallback))
+              if t and len(t) <= 4 * most and not garbled(t)]  # fmt: skip
+    fits = [t for t in usable if len(t) <= most and len(t.split()) <= n]
+    return fits[0] if fits else clip(usable[0], kind) if usable else ""
+
+
+def tidy(entry: dict) -> dict:
+    """A report entry with every text the model wrote that the page shows passed through `label`: the piece's
+    and its things' names and short names, the anchor's title, the nearby thing, and a judged piece's verdicts,
+    fixes and question. The entry itself is left as it was."""
+    piece = entry["piece"]
+    out = entry | {"piece": piece | {
+        "name": label(piece.get("name"), piece.get("family") or piece.get("sam_concept"), NAME) or "piece",
+        "family": label(piece.get("family"), "", NAME),
+        "on_it": [t | {"name": label(t.get("name"), t.get("sam_concept"), NAME) or "item"}
+                  for t in piece.get("on_it", [])]}}  # fmt: skip
+    things = [t["name"] for t in out["piece"]["on_it"]]
+    if "items" in entry:
+        out["items"] = [i | {"name": label(i.get("name"), "", NAME) or "item"} for i in entry["items"]]
+    if "template" in entry:
+        out["template"] = entry["template"] | {"top_items": [
+            it | {"name": label(it.get("name"), "", NAME) or "item",
+                  "short": label(it.get("short"), it.get("name"), SHORT) if it.get("short") else ""}
+            for it in entry["template"].get("top_items", [])]}  # fmt: skip
+    if est := entry.get("estimate"):
+        anchor = catalog("fixes").get(est.get("anchor"), {}).get("label", "")
+        out["estimate"] = est | {
+            "anchor_fix": label(est.get("anchor_fix"), anchor, NAME),
+            "nearby": label(est.get("nearby"), "", SHORT) or None,
+            "brand_model": label(est.get("brand_model"), "", NAME) or None,
+            "size_basis": label(est.get("size_basis"), "", LINE),
+            "on_it": [i | {"short_name": label(i.get("short_name"), things[k] if k < len(things) else "", SHORT)}
+                      for k, i in enumerate(est.get("on_it", []))],
+        } | ({"anchor_how": label(est["anchor_how"], "", LINE)} if "anchor_how" in est else {})  # fmt: skip
+    if j := entry.get("judgment"):
+        icons = {v["icon"]: v["label"] for v in reversed(catalog("fixes").values())}  # the first kind with the icon
+        q = j.get("question")
+        options = [o | {"label": label(o["label"], "", NAME)} for o in (q or {}).get("options", [])]
+        options = [o for o in options if o["label"]]
+        title = label(q["title"], "", LINE) if q else ""
+        out["judgment"] = j | {k: j[k] | {"says": label(j[k]["says"], "", LINE)} for k in ("child", "adult", "quake")}
+        out["judgment"] |= {
+            "fixes": [f | {"title": label(f["title"], icons.get(f["icon"]) or f.get("why"), NAME),
+                           "why": label(f.get("why"), "", LINE)} for f in j.get("fixes", [])],
+            "question": q | {"title": title, "options": options} if q and title and len(options) > 1 else None,
+            "basis": label(j.get("basis"), "", LINE),
+        }  # fmt: skip
+    return out
