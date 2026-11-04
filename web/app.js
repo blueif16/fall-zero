@@ -268,7 +268,39 @@ function resetChat() {
 function showEmpty(on) {
   els.empty.hidden = !on;
   els.tryone.hidden = !on;
+  if (!on) openStep(null);
 }
+
+// How to use it: one step card is open at a time (the mouse over it, keyboard focus, or a tap; a second tap
+// closes it). The open card widens and plays its recording from the start; with reduced motion it only shows
+// the still, with controls to play it.
+const flow = document.querySelector(".flow");
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+function openStep(li) {
+  const was = flow.querySelector("li.open");
+  if (was === li) return;
+  if (was) {
+    was.classList.remove("open");
+    was.querySelector("video").pause();
+  }
+  if (!li) return delete flow.dataset.open;
+  li.classList.add("open");
+  flow.dataset.open = [...flow.children].indexOf(li);
+  const video = li.querySelector("video");
+  video.controls = calm.matches;
+  if (calm.matches) return;
+  video.currentTime = 0;
+  video.play().catch(() => {}); // a still is fine if the clip can't play
+}
+for (const li of flow.children) {
+  let tappedOpen = false;
+  li.addEventListener("pointerenter", (e) => e.pointerType === "mouse" && openStep(li));
+  li.addEventListener("pointerdown", (e) => (tappedOpen = e.pointerType !== "mouse" && li.classList.contains("open")));
+  li.addEventListener("focus", () => openStep(li));
+  li.addEventListener("click", () => openStep(tappedOpen ? null : li));
+}
+flow.addEventListener("pointerleave", (e) => e.pointerType === "mouse" && openStep(null));
+flow.addEventListener("focusout", (e) => !flow.contains(e.relatedTarget) && !flow.matches(":hover") && openStep(null));
 
 function newChat() {
   if (busy) return;
