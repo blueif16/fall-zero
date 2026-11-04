@@ -50,7 +50,8 @@ uv run fall-zero smoke meta-image meta-sam sam3d               # image -> mask -
 | --- | --- |
 | `uv run fall-zero serve [--port 8011]` | Chat web app at http://localhost:8011: send a photo or video, get the verdicts, ask follow-ups |
 | `uv run fall-zero analyze PHOTO_OR_VIDEO [--no-video]` | Per-piece verdicts, ranked fixes, and before/after videos in `out/<name>/` |
-| `uv run pytest` | Physics tests (MuJoCo agrees with the statics, pull test within ±10%) and card tests |
+| `uv run pytest` | Physics tests (MuJoCo agrees with the statics, pull test within ±10%), card and library tests |
+| `node --test "tests/web/*.test.mjs"` | The page's flow: each room's step, "Next:", the plan, who's home, reminders |
 | `uv run fall-zero smoke [checks...]` | Health check. Checks: `meta-spark meta-wonder meta-image meta-vision meta-search-json meta-sam meta-voice-file meta-voice-realtime baseten fireworks modal glimmer sam3d mujoco` |
 | `uv run ruff check . && uv run ruff format .` | Lint and format |
 | `uv run tools/tutorial.py [--cut-only]` | Re-record the front page's how-to clips (`web/tutorial/`) from one live check in Chrome, with the app running. Edit `session()` for what gets pressed, `CLIPS` for what each clip keeps |
@@ -94,12 +95,16 @@ src/fall_zero/
   voice.py        Muse Voice Transcribe: file upload and realtime WebSocket
   analyze.py      photo/video -> pieces -> SAM outlines -> preset + estimate -> verdicts, fixes, videos
   assess.py       report -> cards: tips/maybe/holds per risk, re-checked fixes, questions when unsure
-  agent.py        chat agent: one or two sentences above the cards, follow-up questions
+  agent.py        chat agent: one or two sentences above the cards (a known room: what changed), follow-ups
+  library.py      the room library, Fall 0's memory of the home: each room's record and breakdown, matching a
+                  new photo's pieces, carrying over what's still true, and what changed since
   knowledge.py    loads the skill: the prompt for each step, and answer schemas held to the catalogs
   skill/          the tip-over skill Muse Spark reads (no furniture knowledge lives in the code):
     SKILL.md        how to survey a room, describe a piece as zones, and judge what can't be built
     references/     rooms, case furniture, appliances and screens, other hazards, weights, standards
-    catalog/        examples.toml (worked examples), materials.toml, contents.toml, fixes.toml (practical advice)
+    catalog/        examples.toml (worked examples), materials.toml, contents.toml, fixes.toml (practical advice,
+                    the check after each fix, "I'm stuck" options), handoffs.toml (landlord, handyman),
+                    household.toml (who's home, reminders, the room to check next)
   furniture.py    one parametric template for every case piece: a box whose front is a stack of zones
                   (drawers, side- or bottom-hinged doors, open shelves), contents, things on it, mass
   physics.py      tip-over statics, F2057 child tests, elderly grab, rocking threshold
@@ -108,15 +113,16 @@ src/fall_zero/
   reconstruct.py  fallback for pieces with no preset: SAM mask -> SAM 3D Objects (not hosted)
   server.py       serves web/ and the API; /api/turn streams one chat turn as NDJSON
   smoke.py        end-to-end check of every service
-web/              chat page (plain HTML/CSS/JS, no build step); viewer.js plays the simulation, people.js draws
-                  the child and adult who climb or grab
+web/              chat page (plain HTML/CSS/JS, no build step); flow.js is the room's logic with no page in it
+                  (its step, "Next:", the plan, who's home, reminders); viewer.js plays the simulation,
+                  people.js draws the child and adult who climb or grab
 modal_apps/
   sam3d.py        SAM 3D Objects on an L40S
   glimmer.py      Muse Glimmer 30B on vLLM, H100
 samples/          generated test rooms (Muse Image)
-tests/            physics, card and earthquake tests
+tests/            physics, card, earthquake and library tests; tests/web/ the page's flow (node --test)
 docs/PRD.md, docs/RESEARCH.md (who gets hurt, what people fear, what works, with sources),
-docs/JOURNEY.md (how people go about it and where they stop), docs/FLOW.md (the one-flow proposal)
+docs/JOURNEY.md (how people go about it and where they stop), docs/FLOW.md (the one flow, and how it was built)
 ```
 
 ## Web app
@@ -130,12 +136,29 @@ leaning mirror), a garage or an office. Most pieces are boxes with drawers, door
 builds and tests. Anything else (a leaning mirror, a floor lamp, a safe) is judged by Muse Spark from the
 skill's references and its tiles are tagged "judged" instead of "simulated".
 
+**One flow** ([docs/FLOW.md](docs/FLOW.md)). Every room card shows where it is: What can fall · Be sure · Plan ·
+Fix · Check. One "Next:" line says the single thing to do next and changes with every tap.
+- **Be sure:** "Who's home?" leads (prefilled from the photo). A scenario that isn't for this home is dimmed
+  and leaves the verdicts.
+- **Plan:** in impact order, with one shopping line (what to buy, total cost and time) and what the room
+  becomes once it's all done.
+- **Fix it:** one fix, step by step, beside its simulation. "I'm stuck" lists the real blockers (renting, a
+  thin back, no stud, metal studs, someone says no), each with what to do instead or a message for the
+  landlord or a handyman.
+- **Check it:** a ten-second pull test, then the physics re-runs and the panel plays the room before, then
+  after.
+- **Keep it safe:** the room to check next, reminders for the calendar, and the home's plan to print.
+
+Every check is kept in "My home" (the clock button), the room library. A new photo of a known room, even in
+a new chat, is recognized: what's still true carries over, and the card says what changed ("Still in place:
+strap", "Gone: the mirror").
+
 Nobody reads paragraphs, so the answer is cards, split in two and never repeated. The chat on the left holds
 the choices: questions when the answer depends on something a photo can't show (is it strapped? which floor?
 what's in the drawers? how deep? measured size?), and "Do these first", the fixes that help the whole room most
-("Strap it to the wall" on pieces 1 and 2 is one row), each with its cost and time, "Show me" and "I did this",
+("Strap it to the wall" on pieces 1 and 2 is one row), each with its cost and time, "Show me" and "Fix it",
 plus good habits (nothing tempting on top, heavy things low, everyday things within reach). Tapping an answer or
-"I did this" re-runs the physics (`/api/assess`). Muse Spark adds one or two sentences above, about the room.
+passing a check re-runs the physics (`/api/assess`). Muse Spark adds one or two sentences above, about the room.
 The advice is practical and sourced (`skill/catalog/fixes.toml`, `docs/RESEARCH.md`): what to buy, what to
 avoid (plastic straps, peel-and-stick, bare drywall), three steps, and what renters can do.
 
@@ -158,15 +181,20 @@ previewed fix's how-to; "All together" plays the room with every needed fix done
 view: the camera flies to it, the rest fade, and its facts (size, weight empty and full, what it holds) sit below. The server sends only the motion (`/api/scene`,
 precomputed for a new photo while the reply is written), the browser draws it, and you can turn the view.
 
-Chats are saved as they happen (`out/threads/`); the clock button in the top-left control reopens them.
+Chats are saved as they happen (`out/threads/`), and every checked room goes into the home's library
+(`out/homes/`, the private Blob store when deployed). The clock button opens "My home": who's home, every room
+with what's left, one shopping list, and the chats.
 Numbers, timings and the raw report are under "Details".
 
-API: `POST /api/turn` (multipart `text`, `previous_response_id`, `context`, optional `media`) streams NDJSON
+API: `POST /api/turn` (multipart `text`, `previous_response_id`, `context`, `thread`, optional `media`; header
+`X-Owner`, the browser's home) streams NDJSON
 events `step`, `report` (with `run` and `cards`), `delta`, `done` (with the `response_id` for the next turn),
 or `error`. `POST /api/assess` (`run`, `piece`, `answers`) returns one updated card; `POST /api/scene`
 (`run`, each piece's `answers`, `scenario`, optional `focus`) returns the whole room's simulation for the
 panel's viewer; `POST /api/simulate` (`run`, `piece`, `scenario`, `variant`, `seed`) returns one piece's;
-`/api/threads` lists, saves and deletes chats. Each upload and its
+`/api/threads` lists, saves and deletes chats. `/api/home` is the home (who's home, every room's record);
+`PUT /api/home/rooms/<id>` re-saves a room after taps, and `/api/catalog/{handoffs,household}` serves the two
+catalogs the page reads. Each upload and its
 `report.json` land in `out/web/<id>/`. The other routes are listed at `/docs`.
 
 ## Earthquake

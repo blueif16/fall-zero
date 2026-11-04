@@ -1,10 +1,64 @@
-# Handoff: where Fall 0 stands (2026-10-27, fourth session)
+# Handoff: where Fall 0 stands (2026-11-04, fifth session)
 
 Meta Global AI Developer Hackathon. Building period Oct 27 – Nov 4, 2026. **Submission due Wed Nov 4,
 9:00 PM ET**, with a 3-minute demo video. The repo must be public, and the demo may show only work built
 during the event. The product spec is [PRD.md](PRD.md); [../README.md](../README.md) covers setup, commands and the model map.
 
-## Session 4 in short (read this first)
+## Session 5 in short (2026-11-04, read this first)
+
+The user's ask: the app felt scattered. Make it one flow that runs the whole job for a home, step by step,
+from finding the problem to solving it. [JOURNEY.md](JOURNEY.md) is the research: the step where people
+stall is between deciding and doing, and between doing and knowing it worked. [FLOW.md](FLOW.md) is the
+design and its build plan, S1–S8. Each step has a "done when", and each was merged into `skill-and-zones`
+once it was met.
+
+What the user decided:
+- Build the whole design, not a slice cut for the deadline.
+- Who's home is asked after the photo, prefilled from it.
+- The home is a **room library that is Fall 0's memory**: every check is kept with a breakdown of what it
+  found, and a new photo of a known room is recognized and compared with that breakdown.
+- Check it is a physical check prompt.
+
+What's built:
+- **`web/flow.js`:** the room's logic with no page in it. It covers the step, "Next:", the plan's shopping
+  line and outcome, stuck options, hand-off messages, who's-home weights, reminders, the next room and the
+  printed plan. Tests: `node --test "tests/web/*.test.mjs"` (45); each rule was checked by breaking it.
+- **The card:**
+  - a track (What can fall · Be sure · Plan · Fix · Check) and one "Next:" line;
+  - "Who's home?" at the top of Be sure;
+  - Fix it, with "I'm stuck", landlord and handyman messages, and "Needs someone";
+  - Check it, which re-runs the physics, then the panel plays the room before and after;
+  - Keep it safe: Remind me (`.ics`) and Print the plan.
+- **The catalogs:**
+  - `fixes.toml` gives each kind `item/count/cost_usd/minutes`, a `check`, and `stuck` options, listed by
+    how often each stops people (Consumer Reports surveys);
+  - `handoffs.toml` holds the landlord and handyman messages;
+  - `household.toml` holds the chips, what each answer does to a scenario, the reminders and the rooms to
+    check next.
+- **`library.py`:**
+  - each room is a record: stable piece ids, answers, the breakdown, and a snapshot per check;
+  - `match_pieces` pairs pieces by kind and place, `carry` brings over what's still true, `changes` says
+    what changed;
+  - the turn runs Muse Spark's room match (SKILL.md "Match") alongside the pipeline. Live eval: 5/5.
+- **Checked end to end in Chrome:**
+  1. A strapped living room was sent again in a new chat and came back strapped.
+  2. The card said "Still in place" for both straps, and with the mirror cropped out, "Gone: the mirror".
+  3. The opener started from what changed.
+
+Gotchas from this session:
+- The dev server reloads on `.py` changes, not on `skill/catalog/*.toml`. Restart it after a catalog edit.
+- Port 8012 is taken by another session's server. This session's test server ran on 8023.
+- Another session owns the front page step cards and `tools/tutorial.py` (see CLAUDE.md). The "fix" clip
+  presses "I did this", which a fix with steps no longer has. They've been told the new path.
+- On macOS, run pytest as `MUJOCO_GL=cgl uv run pytest`.
+
+Next:
+1. **Deploy** (not done; needs the user's OK).
+2. Re-record the how-to clips (the step-cards session).
+3. Watch the first real re-checks: things on a piece are matched by name, by place, or by a shared word.
+4. FLOW.md's "Not doing" still stands.
+
+## Session 4 in short
 
 The user's feedback this session drove the work:
 - "Simulate everything segmentation finds."
