@@ -35,7 +35,7 @@ One home, one plan, five steps. Every room card shows where it is, and only that
 | --- | --- | --- | --- | --- |
 | **1 Who's home** | — | A row of chips: child's age (crawling / climbing 1–3 / 3–6 / none), an older adult who grabs furniture, earthquake area, rent or own. Filled in from the survey's guess, so it's one tap to confirm. | The survey guesses `people` (`analyze.py:451`); the floor question | The chips; scenarios ranked and dimmed by who's home; renter options first for renters |
 | **2 What can fall** | "Is everything a risk?" | Pieces worst first, and the fall played at once. Shows which pieces **hold as they are**: lower priority, nothing to buy. Asks only the questions that change a verdict ("Help me be sure"). | Outlines, verdicts, the panel opening on the worst scenario, the questions (`app.js` `stillFigure`, `askGroups`, `openPanel`) | The "holds as it is" list |
-| **3 Your plan** | "Which first, and what do I buy?" | The fixes grouped the way people act: **Now, free** (move the TV and heavy things) → **This weekend** (one shopping list with total cost and time) → **Needs someone** (landlord, handyman). Each group says what the room becomes after it. | `todo()`, `fixGroups()`, `statusWith()`/`roomWith()`, and `how` from `fixes.toml` (buy, cost, time) | The grouping, the combined shopping list, "after this group" |
+| **3 Your plan** | "Which first, and what do I buy?" | The fixes in impact order, the one that makes the room safest first. One shopping line lists everything to buy, the total cost and the time. A last line says what the room becomes with all of it done. **Needs someone** collects what's been handed to a landlord or a handyman. | `todo()`, `fixGroups()`, `statusWith()`/`roomWith()`, and `how` from `fixes.toml` | The shopping line, each row's cost for all its pieces, "with all of these…" |
 | **4 Fix it** | "How, on *my* wall?" | One fix at a time, step by step, with the simulation of that fix beside it. **"I'm stuck"** lists the real stuck points: metal studs, plaster or brick, no holes in the back, not against a wall, can't drill, someone said no. Each leads to an alternative or to someone who can do it. | `howHTML` (steps, avoid, renter; currently in the panel), "Show me" | The step-through; a `stuck` table per fix kind in `fixes.toml` |
 | **5 Check it** | "Did it work?" | After "I did this", a ten-second physical check ("pull the top gently: it shouldn't move"). If it holds, the physics re-runs and the before and after play, with the date. If it moved, Fall 0 goes back to "I'm stuck". | `toggleDone` → `recheck` → `/api/assess`, the variant replay | A `check` per fix kind in `fixes.toml` (the range bracket already has one); "checked on" |
 | **Then: keep it safe** | "Am I done?" | Next room, especially the living room. A reminder for the next milestone (from the age band), a strap check in 6 months, and "check before a new piece goes against the wall". The plan can be shared with a partner, a landlord or a handyman. | Past checks (`openHistory`) | The room library (Fall 0's memory: a known room is recognized and updated); "My home"; `.ics` reminders; a shareable plan |
@@ -131,11 +131,13 @@ running app. Steps 4a and 6a–6c can run in parallel with the front-end steps.
 ### S3. Your plan
 - **3a.** `fixes.toml` gets numbers instead of display strings: `cost_usd = [lo, hi]`, `minutes`, and
   `buy` with a count per piece. The page formats them. `assess.how` and the chips are updated.
-- **3b.** `planGroups(room)`: Now, free → This weekend → Needs someone. Each group says what the room
-  becomes once it and the groups before it are done.
+- **3b.** No "Now, free" group first. The research shows people doing the easy free things and then
+  stopping before the furniture ("outlet plugs… those are simple"). The plan stays in impact order
+  (`todo()`), and `planOutcome(room)` says what the room becomes with every fix done.
 - **3c.** `shoppingList(room)`: items merged with counts, plus the total cost range and total time.
-- **Done when:** on the living-room sample, the "This weekend" line adds up to its rows, and the tests
-  cover the merging.
+  `rowHow(g)`: each row's cost and time cover all of its pieces.
+- **Done when:** on the living-room sample, the shopping line adds up to its rows, and the tests cover
+  the merging.
 
 ### S4. Fix it and Check it
 - **4a. Content, in `fixes.toml`**, sourced from JOURNEY.md and RESEARCH.md:
