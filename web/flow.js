@@ -67,6 +67,7 @@ export function groupTitle(g) {
 
 // What a piece's status for `k` becomes with a variant shown (a fix, or "all together"), or as it is
 export function statusWith(p, k, v) {
+  if (v?.was) return v.before?.[p.index]?.[k] ?? p.card.risks[k].status; // as it was before a fix was checked
   if (v?.plan) return v.plans[k].members.find((m) => m.p === p)?.f.after[k] ?? p.card.risks[k].status;
   const m = v?.members.find((x) => x.p === p && x.f.after && !x.f.done);
   return m ? m.f.after[k] : p.card.risks[k].status;
@@ -159,13 +160,35 @@ export function planOutcome(room) {
   return hold ? `${hold} of ${room.pieces.length} hold` : "";
 }
 
+// --- fixing: the stuck options of a row, and the message for whoever else has to say yes or do it -----
+
+// "I'm stuck" offers its fix kind's options (fixes.toml `stuck`), once each however many pieces share it
+export function stuckOptions(g) {
+  const seen = new Map();
+  for (const m of g.members) for (const o of m.f.how?.stuck || []) if (!seen.has(o.key)) seen.set(o.key, o);
+  return [...seen.values()];
+}
+
+const listed = (names) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+
+// A hand-off's message (handoffs.toml `template`) for this fix: the room, the pieces it's for, the fix
+export function handoffText(template, room, g) {
+  const ms = g.members.some((m) => m.f.answer) ? g.members.filter((m) => m.f.answer) : g.members;
+  return template
+    .replaceAll("{room}", clip(room.ev.report.room || "room", 40))
+    .replaceAll("{pieces}", listed([...new Set(ms.map((m) => pieceName(m.p.card)))]))
+    .replaceAll("{fixes}", g.title);
+}
+
 // --- where the room is in the flow, and the one thing to do next ---------------------------------
 
 // The steps of a check, in order. "find" is done once the verdicts are in; the rest follow from the cards.
 export const STEPS = ["find", "sure", "plan", "fix", "check", "safe"];
 
-// The fixes still to do that would make a piece safer, in the to-do order
-const toDo = (room) => todo(room).filter((g) => g.act && !g.done && g.lift > 0);
+// The fixes still to do that would make a piece safer, in the to-do order: yours, and the ones handed to a
+// landlord or a handyman (room.handed: group key -> who)
+const toDo = (room) => todo(room).filter((g) => g.act && !g.done && g.lift > 0 && !room.handed?.[g.key]);
+const handedOff = (room) => todo(room).filter((g) => g.act && !g.done && g.lift > 0 && room.handed?.[g.key]);
 
 // The fixes that count toward "n of m done": done ones that changed the physics, and the ones still to do
 const counted = (room) => todo(room).filter((g) => g.act && (g.done ? g.members.some((m) => m.f.after) : g.lift > 0));
@@ -176,10 +199,11 @@ const atRisk = (room) => Object.values(roomNow(room)).some((s) => s !== "holds")
 // while a fix would make a piece safer, else safe. Fixing and checking are where the person has taken it.
 export function stepOf(room) {
   if (!room.pieces.length) return null;
-  if (room.checking) return "check";
-  if (room.fixing) return "fix";
+  const open = (key) => key && fixGroups(room).some((g) => g.key === key && !g.done); // not done since
+  if (open(room.checking)) return "check";
+  if (open(room.fixing)) return "fix";
   if (!room.skipAsks && askGroups(room).length) return "sure";
-  return toDo(room).length ? "plan" : "safe";
+  return toDo(room).length || handedOff(room).length ? "plan" : "safe";
 }
 
 // What the room becomes with a fix done: everything holds, or how many of its pieces do
@@ -202,6 +226,10 @@ export function nextLine(room) {
   if (step === "plan" || step === "fix" || step === "check") {
     const groups = counted(room);
     const g = (step === "plan" ? null : groups.find((x) => x.key === (room.checking || room.fixing))) || toDo(room)[0];
+    if (!g) { // all that's left is with someone else
+      const h = handedOff(room)[0];
+      return { step, text: `Next: waiting on your ${room.handed[h.key]} · ${h.title}`, pieces: numbers(h.members), key: h.key };
+    }
     const done = groups.filter((x) => x.done).length;
     const so_far = done ? `${done} of ${groups.length} done. ` : "";
     const what = step === "check" ? `check that ${fixTitle(g.f).toLowerCase()} holds` : g.title;
