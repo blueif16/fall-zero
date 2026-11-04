@@ -186,13 +186,30 @@ running app. Steps 4a and 6a–6c can run in parallel with the front-end steps.
     it;
   - the API gets the home, saves the household, and removes a room;
   - tests in `test_store.py` / `test_server`.
-- **6b. Saving:** every analyzed photo goes into the library, as a new room or an update.
+- **6b. Saving, with a breakdown:**
+  - Every analyzed photo goes into the library, as a new room or an update.
+  - After every simulation (a new photo, an answer, a fix done or checked), the room's **breakdown** is
+    rewritten. It is a short record of what was found, per piece:
+    - the verdict per scenario and why;
+    - what would fall from it;
+    - where it stands;
+    - the fixes done and checked, with dates;
+    - the questions still open.
+  - Each check also keeps a dated snapshot of the breakdown, so the room has a history.
 - **6c. Recognizing:**
   - When the library has rooms, Muse Spark gets the new still and the rooms' thumbnails and returns
     the matching room (or none) and which piece is which. The prompt goes in a "Match" section of
     `SKILL.md`. It runs alongside SAM and the describe step.
   - The matched pieces' answers are carried over before the cards are built.
   - The report says which room it is, since when, and what was carried over.
+  - **Bring it up:** a known room opens with what Fall 0 found last time ("Nov 2: the bookcase could
+    tip on a climbing child; you strapped it").
+  - **What changed:** the new findings are compared with the breakdown:
+    - pieces that are new, gone or moved, and things added to or taken off them;
+    - verdicts that got better or worse;
+    - fixes still in place.
+  - The advice leads with the changes ("The TV stand moved next to the bookcase: in a quake the
+    bookcase now knocks into it"). Muse Spark's opener gets the breakdown and the changes as context.
 - **6d. "My home" (past checks becomes this):**
   - each room with its thumbnail, status, progress and when it was last checked, and Remove;
   - a known room's card says "Your living room again · checked Nov 2 · 1 strapped".
@@ -200,6 +217,8 @@ running app. Steps 4a and 6a–6c can run in parallel with the front-end steps.
 - **Done when:**
   - the living-room sample sent again in a new chat is recognized, and its strapped bookcase arrives as
     "holds";
+  - a copy of that photo with one piece cropped out is recognized as the same room, and the piece is
+    reported as gone;
   - after the room is removed, the next send is new again.
 
 ### S7. Keep it safe
