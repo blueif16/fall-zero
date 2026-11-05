@@ -112,9 +112,9 @@ running app. Steps 4a and 6a–6c can run in parallel with the front-end steps.
 **Status (2026-11-04):**
 - S1–S7 are built and merged into `skill-and-zones`, each checked against its "done when".
 - S8b's docs are done.
-- Still open:
-  - deploying to Vercel waits for the user's OK;
-  - re-recording the front page's clips is with the step-cards session, which owns `tools/tutorial.py`.
+- Deployed (d827a54) and checked live end to end.
+- Still open: re-recording the front page's clips is with the step-cards session, which owns
+  `tools/tutorial.py`.
 
 ### S1. The flow's logic, pure and tested (`web/flow.js`)
 - **1a.** Move the room logic out of `app.js` into `web/flow.js`, a module with no DOM. `app.js`

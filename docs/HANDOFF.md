@@ -53,7 +53,8 @@ Gotchas from this session:
 - On macOS, run pytest as `MUJOCO_GL=cgl uv run pytest`.
 
 Next:
-1. **Deploy** (not done; needs the user's OK).
+1. **Deployed** 2026-11-04, 7 PM ET (d827a54), and checked live end to end: a check, Fix it → Check it, then
+   the same room recognized in a new chat from the Blob-stored library.
 2. Re-record the how-to clips (the step-cards session).
 3. Watch the first real re-checks: things on a piece are matched by name, by place, or by a shared word.
 4. FLOW.md's "Not doing" still stands.
